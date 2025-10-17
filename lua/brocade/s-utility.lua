@@ -31,20 +31,40 @@ local function complete_fn(lead, line, pos)
 	return out
 end
 
+---@param args string[]
+---@param subcommand_words string[]
+---@return boolean is_matching
+---@return string[]? new_args after cutting out subcommand args
+local function matches_subcommand(args, subcommand_words)
+	--
+	local subcmd_words_set = {}
+	local subcmd_words_count = 0
+	for _, subcmd_word in ipairs(subcommand_words) do
+		subcmd_words_set[subcmd_word] = true
+		subcmd_words_count = subcmd_words_count + 1
+	end
+	--
+	local new_args = vim.tbl_extend("error", args, {})
+	if #new_args < subcmd_words_count then return false, nil end
+	for _ = 1, subcmd_words_count do
+		local arg_word = table.remove(new_args, 1)
+		subcmd_words_set[arg_word] = nil
+	end
+	-- if there is any subcmd word left in the set, the subcmd doesn't match:
+	for _, _ in pairs(subcmd_words_set) do
+		return false, nil
+	end
+	return true, new_args
+end
+
 function M.SUserCommand()
 	local self = {}
 
 	function self.create()
 		vim.api.nvim_create_user_command("S", function (params)
 			local fargs = params.fargs or {}
-			if (
-				fargs[1] == "target" and fargs[2] == "org"
-				or (fargs[1] == "org" and fargs[2] == "target")
-			) then
-				table.remove(fargs, 1)
-				table.remove(fargs, 1)
-				ManageTgtOrgCfg.ManageTargetOrg().run(fargs)
-			end
+			local is_tgt_org_subcmd, new_fargs = matches_subcommand(fargs, { "target", "org" })
+			if is_tgt_org_subcmd and new_fargs then ManageTgtOrgCfg.ManageTargetOrg().run(new_fargs) end
 		end, {
 				force = true,
 				nargs = "*",
