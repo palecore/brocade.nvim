@@ -11,12 +11,12 @@ local function complete_fn(lead, line, pos)
 	local out = {}
 	line = vim.trim(line)
 	if vim.endswith(line, "target org") then
-		pos = pos + #("target org")
-		line = string.sub(line, #("target org") + 1)
+		pos = pos + #"target org"
+		line = string.sub(line, #"target org" + 1)
 		return ManageTgtOrgCfg.complete_fn(lead, line, pos)
 	elseif vim.endswith(line, "org target") then
-		pos = pos + #("org target")
-		line = string.sub(line, #("org target") + 1)
+		pos = pos + #"org target"
+		line = string.sub(line, #"org target" + 1)
 		return ManageTgtOrgCfg.complete_fn(lead, line, pos)
 	elseif vim.endswith(line, "org") then
 		table.insert(out, "target")
@@ -61,15 +61,15 @@ function M.SUserCommand()
 	local self = {}
 
 	function self.create()
-		vim.api.nvim_create_user_command("S", function (params)
+		vim.api.nvim_create_user_command("S", function(params)
 			local fargs = params.fargs or {}
 			local is_tgt_org_subcmd, new_fargs = matches_subcommand(fargs, { "target", "org" })
 			if is_tgt_org_subcmd and new_fargs then ManageTgtOrgCfg.ManageTargetOrg().run(new_fargs) end
 		end, {
-				force = true,
-				nargs = "*",
-				complete = complete_fn,
-			})
+			force = true,
+			nargs = "*",
+			complete = complete_fn,
+		})
 	end
 
 	return self
