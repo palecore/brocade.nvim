@@ -34,10 +34,9 @@ end
 
 ---@param args string[]
 ---@param subcommand_words string[]
----@return boolean is_matching if at least one subcommand word matches
----@return string[]? new_args after cutting out subcommand args
+---@return boolean is_matching if args so far match the subcommand words
 local function partially_matches_subcommand(args, subcommand_words)
-	if #args < 1 then return false, nil end
+	if #args < 1 then return false end
 	--
 	local subcmd_words_set = {}
 	local subcmd_words_count = 0
@@ -46,50 +45,45 @@ local function partially_matches_subcommand(args, subcommand_words)
 		subcmd_words_count = subcmd_words_count + 1
 	end
 	--
-	local new_args = vim.tbl_extend("error", args, {})
-	local sth_matched = false
-	while #new_args + subcmd_words_count > 0 do
-		local arg = new_args[1]
-		if subcmd_words_set[arg] then
-			sth_matched = true
-			subcmd_words_set[arg] = nil
-			subcmd_words_count = subcmd_words_count - 1
-			table.remove(new_args, 1)
-		else
-			break
-		end
+	if #args > subcmd_words_count then return false end
+	--
+	for _, arg in ipairs(args) do
+		if not subcmd_words_set[arg] then return false end
+		subcmd_words_set[arg] = nil
+		subcmd_words_count = subcmd_words_count - 1
 	end
-	return sth_matched, sth_matched and new_args or nil
+	return true
 end
 
 ---@param args string[]
 ---@param subcmds string[][]
 ---@return integer[] matched_subcmd_idxs
 ---@return string[][] matched_subcmds
----@return string[][] new_args_per_subcmd
 local function partially_matches_any_subcmds(args, subcmds)
 	local idxs = {}
 	local p_matched_subcmds = {}
-	local new_args_per_subcmd = {}
 	for idx, subcmd_words in ipairs(subcmds) do
-		local is_match, new_args = partially_matches_subcommand(args, subcmd_words)
+		local is_match = partially_matches_subcommand(args, subcmd_words)
 		if is_match then
 			table.insert(idxs, idx)
 			table.insert(p_matched_subcmds, subcmd_words)
-			table.insert(new_args_per_subcmd, new_args)
 		end
 	end
-	return idxs, p_matched_subcmds, new_args_per_subcmd
+	return idxs, p_matched_subcmds
 end
 
 ---@param args string[]
 ---@param subcommands string[][]
 ---@return string[] options
 local function complete_subcmd(args, subcommands)
-	local idxs, matched_subcmds, _ = partially_matches_any_subcmds(args, subcommands)
-	-- if at least one match - complete only for those matched (otherwise -
-	-- complete for all):
-	if #idxs > 0 then subcommands = matched_subcmds end
+	local idxs, matched_subcmds = partially_matches_any_subcmds(args, subcommands)
+	-- if at least one match - complete only for those matched:
+	if #idxs > 0 then
+		subcommands = matched_subcmds
+	elseif #args > 0 then
+		-- if there are already some args but no partial matches - no compl opts:
+		return {}
+	end
 	local options = {}
 	for _, subcmd_words in ipairs(subcommands) do
 		local subcmd_words_set = {}
