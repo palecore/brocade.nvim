@@ -7,13 +7,39 @@ local M = {}
 
 local function sq_escape(str) return string.gsub(str, "'", "\\'") end
 
-local function fetch_org_info(callback)
+local function sf_config_path()
+	local sfdx_project_dir = vim.fs.root(".", { ".sf" })
+	assert(sfdx_project_dir, "Couldn't find SFDX project root directory!")
+	return vim.fs.joinpath(sfdx_project_dir, ".sf", "config.json")
+end
+
+local function read_project_config()
+	local sf_config_lines = vim.fn.readfile(sf_config_path())
+	assert(sf_config_lines, "Couldn't read project's SF CLI configuration!")
+	local sf_config_json = table.concat(sf_config_lines, "\n")
+	local sf_config = vim.json.decode(sf_config_json, { luanil = { array = true, object = true } })
+	assert(sf_config, "Couldn't parse project's SF CLI configuration!")
 	--
-	if vim.g.brocade_latest_org_info then
-		callback(vim.g.brocade_latest_org_info)
+	return {
+		sf_target_org = sf_config["target-org"],
+		sf_config = sf_config,
+	}
+end
+
+local function fetch_org_info(target_org, callback)
+	-- if target org is not given, use project-default one:
+	if not target_org then target_org = read_project_config().sf_target_org end
+	--
+	local org_infos = vim.g.brocade_org_infos or {}
+	-- in case this org's info has been already cached - return it:
+	if org_infos[target_org] then
+		callback(org_infos[target_org])
 		return
 	end
-	vim.system({ "sf", "org", "display", "--json" }, {}, function(obj)
+	-- otherwise, fetch it from SF CLI:
+	local sf_cmd = { "sf", "org", "display", "--json" }
+	if target_org then table.insert(sf_cmd, "--target-org=" .. target_org) end
+	vim.system(sf_cmd, {}, function(obj)
 		assert(obj.stdout, "No standard output!")
 		assert(type(obj.stdout) == "string", "Standard output is not a string!")
 		--
@@ -21,13 +47,17 @@ local function fetch_org_info(callback)
 		assert(response["status"] == 0, "Response has a non-zero status!")
 		assert(response["result"], "Response doesn't have a result")
 		--
-		vim.g.brocade_latest_org_info = {
+		local org_info = {
 			api_version = assert(response["result"]["apiVersion"]),
 			instance_url = assert(response["result"]["instanceUrl"]),
 			access_token = assert(response["result"]["accessToken"]),
 			username = assert(response["result"]["username"]),
+			alias = assert(response["result"]["alias"]),
 		}
-		callback(vim.g.brocade_latest_org_info)
+		org_infos[org_info.username] = org_info
+		org_infos[org_info.alias] = org_info
+		vim.g.brocade_org_infos = org_infos
+		callback(org_info)
 	end)
 end
 
@@ -153,6 +183,7 @@ end
 function M.RunAnonApex()
 	local self = {}
 	local _self = {
+		target_org = nil,
 		anonymous_body = nil,
 		instance_url = nil,
 		api_version = nil,
@@ -192,11 +223,15 @@ function M.RunAnonApex()
 
 	local function tell_debug(msg) vim.notify(msg, vim.log.levels.DEBUG) end
 
+	function self.set_target_org(value)
+		_self.target_org = value
+	end
+
 	function self.run_this_buf()
 		local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
 		local buf_text = table.concat(buf_lines, "\n")
 		_self.anonymous_body = buf_text
-		fetch_org_info(_self.run_this_buf_save_org_info)
+		fetch_org_info(_self.target_org, _self.run_this_buf_save_org_info)
 	end
 	function _self.run_this_buf_save_org_info(org_info)
 		_self.access_token = assert(org_info.access_token)
