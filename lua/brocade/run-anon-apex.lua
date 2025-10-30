@@ -257,9 +257,9 @@ function M.RunAnonApex()
 	function _self.run_this_buf_parse_user_id(result)
 		assert(result, "User query result invalid!")
 		assert(result.done == true, "Query not finished!")
-		assert(result.entityTypeName == "User", "Unexpected query result entity!")
 		assert(result.size == 1, "Query result is not 1 record!")
 		assert(result.totalSize == 1, "Query result is not 1 record total!")
+		assert(result.entityTypeName == "User", "Unexpected query result entity!")
 		local records = result.records
 		local user_record = records[1]
 		_self.user_id = assert(user_record.Id)
