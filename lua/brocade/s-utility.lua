@@ -3,6 +3,7 @@
 -- Universal "facade" user command
 
 local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
+local RunAnonApex = require("brocade.run-anon-apex")
 
 local M = {}
 
@@ -133,6 +134,7 @@ local function complete_fn(lead, line, pos)
 	-- define fixed, supported subcommands:
 	local subcmds = {
 		{ "target", "org" },
+		{ "run", "this", "apex" },
 	}
 	--
 	local subline = string.sub(line, #"S " + 1)
@@ -150,8 +152,14 @@ function M.SUserCommand()
 	function self.create()
 		vim.api.nvim_create_user_command("S", function(params)
 			local fargs = params.fargs or {}
-			local is_tgt_org_subcmd, new_fargs = matches_subcommand(fargs, { "target", "org" })
-			if is_tgt_org_subcmd and new_fargs then ManageTgtOrgCfg.ManageTargetOrg().run(new_fargs) end
+			local is_subcmd_matched
+			local new_fargs
+			-- CMD: target org:
+			is_subcmd_matched, new_fargs = matches_subcommand(fargs, { "target", "org" })
+			if is_subcmd_matched and new_fargs then ManageTgtOrgCfg.ManageTargetOrg().run(new_fargs) end
+			-- CMD: run this apex:
+			is_subcmd_matched, new_fargs = matches_subcommand(fargs, { "run", "this", "apex" })
+			if is_subcmd_matched and new_fargs then RunAnonApex.RunAnonApex().run_this_buf() end
 		end, {
 			force = true,
 			nargs = "*",
