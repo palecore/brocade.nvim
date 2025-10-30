@@ -129,6 +129,22 @@ local function complete_subcmd(args, subcommands)
 	return options
 end
 
+local function org_aliases(line)
+	local out = {}
+	local function read_org_aliases()
+		local aliases_path = vim.fn.glob("~/.sfdx/alias.json")
+		local aliases_json = table.concat(vim.fn.readfile(aliases_path), "\n")
+		local aliases_obj = vim.json.decode(aliases_json, { luanil = { array = true, object = true } })
+		return aliases_obj
+	end
+	line = vim.trim(line)
+	local aliases_obj = read_org_aliases()
+	for alias, _ in pairs(aliases_obj.orgs) do
+		table.insert(out, alias)
+	end
+	return out
+end
+
 ---@type fun(lead: string, line: string, pos: number): string[]
 local function complete_fn(lead, line, pos)
 	-- define fixed, supported subcommands:
@@ -141,6 +157,21 @@ local function complete_fn(lead, line, pos)
 	local args = vim.split(subline, "[ \t\r\n]+", { trimempty = true })
 	if matches_subcommand(args, subcmds[1]) then
 		return ManageTgtOrgCfg.complete_fn(lead, line, pos)
+	elseif matches_subcommand(args, subcmds[2]) then
+		local avails = { "-o", "--target-org" }
+		local opt_args = {}
+		for i = 4, #args do
+			local opt_arg = args[i]
+			opt_args[#opt_args + 1] = opt_arg
+			if opt_arg == "-o" or opt_arg == "--target-org" then
+				avails = {}
+			end
+		end
+		if opt_args[#opt_args] == "-o" or opt_args[#opt_args] == "--target-org" then
+			return org_aliases(opt_args[#opt_args] or "")
+		else
+			return avails
+		end
 	end
 	local subcmd_out = complete_subcmd(args, subcmds)
 	return subcmd_out
@@ -159,7 +190,19 @@ function M.SUserCommand()
 			if is_subcmd_matched and new_fargs then ManageTgtOrgCfg.ManageTargetOrg().run(new_fargs) end
 			-- CMD: run this apex:
 			is_subcmd_matched, new_fargs = matches_subcommand(fargs, { "run", "this", "apex" })
-			if is_subcmd_matched and new_fargs then RunAnonApex.RunAnonApex().run_this_buf() end
+			if is_subcmd_matched and new_fargs then
+				local run_anon_apex = RunAnonApex.RunAnonApex()
+				-- parse optional target org argument:
+				local target_org = nil
+				if new_fargs[1] == "-o" and new_fargs[2] then
+					target_org = new_fargs[2]
+				elseif new_fargs[1] == "--target-org" and new_fargs[2] then
+					target_org = new_fargs[2]
+				end
+				if target_org then run_anon_apex.set_target_org(target_org) end
+				-- execute the command:
+				run_anon_apex.run_this_buf()
+			end
 		end, {
 			force = true,
 			nargs = "*",
