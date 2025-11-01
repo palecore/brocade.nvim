@@ -475,11 +475,22 @@ function M.RunAnonApex()
 		end
 		-- create a buffer with only debug lines filtered and prettified:
 		local debug_lines = {}
+		local function get_user_debug_prefix(line)
+				return string.match(line, "^[%d:.]+ [(]%d+[)][|]USER_DEBUG[|][[]%d+[]][|]DEBUG[|]")
+		end
+		local function is_any_log_entry(line)
+			return not not string.match(line, "^[%d:.]+ [(]%d+[)][|]")
+		end
+		local in_user_debug = false
 		for _, line in ipairs(log_lines) do
-			local dbg_prefix =
-				string.match(line, "^[%d:.]+ [(]%d+[)][|]USER_DEBUG[|][[]%d+[]][|]DEBUG[|]")
-			if dbg_prefix then
-				line = string.sub(line, #dbg_prefix + 1)
+			local usr_dbg_prefix = get_user_debug_prefix(line)
+			if usr_dbg_prefix then
+				in_user_debug = true
+				line = string.sub(line, #usr_dbg_prefix + 1)
+				table.insert(debug_lines, line)
+			elseif is_any_log_entry(line) then
+				in_user_debug = false
+			elseif in_user_debug then
 				table.insert(debug_lines, line)
 			end
 		end
