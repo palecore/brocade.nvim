@@ -223,9 +223,7 @@ function M.RunAnonApex()
 
 	local function tell_debug(msg) vim.notify(msg, vim.log.levels.DEBUG) end
 
-	function self.set_target_org(value)
-		_self.target_org = value
-	end
+	function self.set_target_org(value) _self.target_org = value end
 
 	function self.run_this_buf()
 		local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
