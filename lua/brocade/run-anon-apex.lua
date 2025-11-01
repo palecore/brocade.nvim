@@ -189,6 +189,7 @@ function M.RunAnonApex()
 		api_version = nil,
 		access_token = nil,
 		username = nil,
+		apex_log_id = nil,
 	}
 
 	local progress_handle = nil
@@ -452,6 +453,7 @@ function M.RunAnonApex()
 		assert(result.totalSize == 1, "Query result is not 1 record total!")
 		local records = result.records
 		local apex_log_record = records[1]
+		_self.apex_log_id = assert(apex_log_record.Id)
 		local apex_log_path = assert(apex_log_record.attributes.url .. "/Body")
 		--
 		local req = CurlReq()
@@ -479,11 +481,16 @@ function M.RunAnonApex()
 		vim.cmd.split()
 		vim.cmd.enew()
 		vim.api.nvim_buf_set_lines(0, 0, -1, true, debug_lines)
-		-- create a buffer with the whole log:
+		-- create a buffer with the whole log & write to a proper log file:
+		local project_root_dir = vim.fs.root(".", { "sfdx-project.json", ".sf", ".sfdx" })
+		local log_dir = vim.fs.joinpath(project_root_dir, ".sfdx", "tools", "debug", "logs")
+		local log_path = vim.fs.joinpath(log_dir, assert(_self.apex_log_id) .. ".log")
+		assert(vim.fn.mkdir(log_dir, "p") ~= 0, "Creating log dir failed!")
+		assert(vim.fn.writefile(log_lines, log_path, "s") == 0)
+		--
 		vim.cmd.split()
-		vim.cmd.enew()
+		vim.cmd.edit(log_path)
 		vim.bo.filetype = "sflog"
-		vim.api.nvim_buf_set_lines(0, 0, -1, true, log_lines)
 		tell_finished("Anonymous Apex executed.")
 	end
 
