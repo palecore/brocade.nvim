@@ -226,8 +226,17 @@ function M.RunAnonApex()
 
 	function self.set_target_org(value) _self.target_org = value end
 
+	local function get_file_or_buf_lines()
+		local file_path = vim.api.nvim_buf_get_name(0)
+		if file_path and vim.fn.filereadable(file_path) == 1 then
+			return vim.fn.readfile(file_path)
+		else
+			return vim.api.nvim_buf_get_lines(0, 0, -1, true)
+		end
+	end
+
 	function self.run_this_buf()
-		local buf_lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
+		local buf_lines = get_file_or_buf_lines()
 		local buf_text = table.concat(buf_lines, "\n")
 		_self.anonymous_body = buf_text
 		fetch_org_info(_self.target_org, _self.run_this_buf_save_org_info)
