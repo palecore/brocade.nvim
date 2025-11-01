@@ -468,6 +468,10 @@ function M.RunAnonApex()
 	end
 	function _self.run_this_buf_parse_log_body(log_text)
 		local log_lines = vim.split(log_text, "\n")
+		-- to streamline launching replay debugger, tweak VISUALFORCE to FINEST:
+		if log_lines[1] then
+			log_lines[1] = string.gsub(log_lines[1], "VISUALFORCE,FINER", "VISUALFORCE,FINEST", 1)
+		end
 		-- create a buffer with only debug lines filtered and prettified:
 		local debug_lines = {}
 		for _, line in ipairs(log_lines) do
