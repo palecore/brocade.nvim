@@ -467,6 +467,7 @@ function M.RunAnonApex()
 		req.send(vim.schedule_wrap(_self.run_this_buf_parse_log_body))
 	end
 	function _self.run_this_buf_parse_log_body(log_text)
+		local apex_log_id = assert(_self.apex_log_id)
 		local log_lines = vim.split(log_text, "\n")
 		-- to streamline launching replay debugger, tweak VISUALFORCE to FINEST:
 		if log_lines[1] then
@@ -482,13 +483,14 @@ function M.RunAnonApex()
 				table.insert(debug_lines, line)
 			end
 		end
-		vim.cmd.split()
-		vim.cmd.enew()
-		vim.api.nvim_buf_set_lines(0, 0, -1, true, debug_lines)
+		local debugs_buf_nr = vim.api.nvim_create_buf(true, true)
+		vim.api.nvim_buf_set_name(debugs_buf_nr, apex_log_id)
+		vim.api.nvim_buf_set_lines(debugs_buf_nr, 0, -1, true, debug_lines)
+		vim.api.nvim_open_win(debugs_buf_nr, true, { split = "below" })
 		-- create a buffer with the whole log & write to a proper log file:
 		local project_root_dir = vim.fs.root(".", { "sfdx-project.json", ".sf", ".sfdx" })
 		local log_dir = vim.fs.joinpath(project_root_dir, ".sfdx", "tools", "debug", "logs")
-		local log_path = vim.fs.joinpath(log_dir, assert(_self.apex_log_id) .. ".log")
+		local log_path = vim.fs.joinpath(log_dir, apex_log_id .. ".log")
 		assert(vim.fn.mkdir(log_dir, "p") ~= 0, "Creating log dir failed!")
 		assert(vim.fn.writefile(log_lines, log_path, "s") == 0)
 		--
