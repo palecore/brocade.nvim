@@ -448,7 +448,27 @@ function M.RunAnonApex()
 		end
 		if not result.success then
 			tell_failed("Apex didn't succeed!")
-			tell_debug(vim.inspect(result))
+			local line = result.line
+			local column = result.column
+			local except_msg = result.exceptionMessage
+			local except_stacktrace = result.exceptionStackTrace
+			local diagno_ns = _self.diagno_ns
+			-- ensure all data is available for a diagnostic message:
+			if line and column and except_msg and except_stacktrace and diagno_ns then
+			else
+				return
+			end
+			vim.schedule(function()
+				-- set a diagnostic message for that runtime failure:
+				vim.diagnostic.set(diagno_ns, 0, {
+					{ lnum = line, col = column, message = except_msg .. "\n" .. except_stacktrace },
+				})
+				-- after saving/re-reading the buffer, auto-clear this diagnostic:
+				vim.api.nvim_create_autocmd(
+					{ "BufRead", "BufWrite" },
+					{ buffer = 0, once = true, callback = function() vim.diagnostic.reset(diagno_ns, 0) end }
+				)
+			end)
 			return
 		end
 		-- retrieve log from anon apex:
