@@ -190,6 +190,7 @@ function M.RunAnonApex()
 		access_token = nil,
 		username = nil,
 		apex_log_id = nil,
+		diagno_ns = nil,
 	}
 
 	local progress_handle = nil
@@ -236,6 +237,8 @@ function M.RunAnonApex()
 	end
 
 	function self.run_this_buf()
+		_self.diagno_ns = vim.api.nvim_create_namespace("brocade")
+		--
 		local buf_lines = get_file_or_buf_lines()
 		local buf_text = table.concat(buf_lines, "\n")
 		_self.anonymous_body = buf_text
@@ -424,7 +427,16 @@ function M.RunAnonApex()
 		assert(result, "Result invalid!")
 		if not result.compiled then
 			tell_failed("Apex didn't compile!")
-			tell_debug(vim.inspect(result))
+			local line = assert(result.line)
+			local column = assert(result.column)
+			local compileProblem = assert(result.compileProblem)
+			local diagno_ns = assert(_self.diagno_ns)
+			vim.schedule(function()
+				-- set a diagnostic message for that compilation failure:
+				vim.diagnostic.set(diagno_ns, 0, {
+					{ lnum = line, col = column, message = compileProblem },
+				})
+			end)
 			return
 		end
 		if not result.success then
