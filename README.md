@@ -5,6 +5,12 @@ A neovim plugin to aid development of Salesforce DX projects.
 
 _This plugin is in a very early stage of development!_
 
+## Requirements
+
+* `curl` - used to make Salesforce REST API calls
+* `sf` CLI utility & its project/user config files/dirs - used to obtain access
+  token to the Orgs
+
 ## Configuration
 
 `lazy.nvim` minimal plugin spec:
