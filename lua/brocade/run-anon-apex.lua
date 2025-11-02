@@ -239,6 +239,7 @@ function M.RunAnonApex()
 		local buf_lines = get_file_or_buf_lines()
 		local buf_text = table.concat(buf_lines, "\n")
 		_self.anonymous_body = buf_text
+		tell_wip("Fetching org info...")
 		fetch_org_info(_self.target_org, _self.run_this_buf_save_org_info)
 	end
 	function _self.run_this_buf_save_org_info(org_info)
