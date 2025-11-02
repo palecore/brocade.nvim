@@ -238,6 +238,8 @@ function M.RunAnonApex()
 
 	function self.run_this_buf()
 		_self.diagno_ns = vim.api.nvim_create_namespace("brocade")
+		-- reset error diagnostics from previous anon-apex run if present:
+		vim.diagnostic.reset(_self.diagno_ns, 0)
 		--
 		local buf_lines = get_file_or_buf_lines()
 		local buf_text = table.concat(buf_lines, "\n")
@@ -436,6 +438,11 @@ function M.RunAnonApex()
 				vim.diagnostic.set(diagno_ns, 0, {
 					{ lnum = line, col = column, message = compileProblem },
 				})
+				-- after saving/re-reading the buffer, auto-clear this diagnostic:
+				vim.api.nvim_create_autocmd(
+					{ "BufRead", "BufWrite" },
+					{ buffer = 0, once = true, callback = function() vim.diagnostic.reset(diagno_ns, 0) end }
+				)
 			end)
 			return
 		end
