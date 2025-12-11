@@ -52,12 +52,48 @@ end
 
 local cmdline = Cmdline:new()
 do
-	cmdline:add_subcommand({ "target", "org" })
+	-- TARGET ORG
+	local target_org_sub = cmdline:add_subcommand({ "target", "org" })
+	local target_org_inputs = { { target_org = nil } }
+	-- 1st arg: target org
+	local tgt_org_sub_1 = target_org_sub:add_positional_arg()
+	tgt_org_sub_1:set_complete_fn(function(lead, line, pos) return org_aliases(line) end)
+	tgt_org_sub_1:on_value(function(target_org) target_org_inputs[1].target_org = target_org end)
+	-- entrypoint
+	target_org_sub:on_parsed(function()
+		local target_org = target_org_inputs[1].target_org
+		local manage_tgt_org_cfg = ManageTgtOrgCfg.ManageTargetOrg()
+		manage_tgt_org_cfg.run({ target_org })
+	end)
+
+	-- RUN THIS APEX
 	local run_apex_sub = cmdline:add_subcommand({ "run", "this", "apex" })
+	local run_apex_inputs = { { target_org = nil } }
+	-- option: target-org
 	local target_org_opt = run_apex_sub:add_option("--target-org")
 	target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	target_org_opt:on_value(function(target_org)
+		run_apex_inputs[1] = run_apex_inputs[1] or {}
+		run_apex_inputs[1].target_org = target_org
+	end)
+	-- option: o
 	local o_opt = run_apex_sub:add_option("-o")
+	target_org_opt:on_value(function(target_org)
+		run_apex_inputs[1] = run_apex_inputs[1] or {}
+		run_apex_inputs[1].target_org = target_org
+	end)
 	o_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	-- entrypoint
+	run_apex_sub:on_parsed(function()
+		--
+		local target_org = run_apex_inputs[1].target_org
+		run_apex_inputs[1] = {} -- clean before future invocations
+		--
+		local run_anon_apex = RunAnonApex.RunAnonApex()
+		if target_org then run_anon_apex.set_target_org(target_org) end
+		run_anon_apex.run_this_buf()
+	end)
+	vim.notify(vim.inspect { cmdline })
 end
 
 ---@type fun(lead: string, line: string, pos: number): string[]
@@ -67,32 +103,10 @@ function M.SUserCommand()
 	local self = {}
 
 	function self.create()
-		vim.api.nvim_create_user_command("S", function(params)
-			local fargs = params.fargs or {}
-			local is_subcmd_matched
-			local new_fargs
-			-- CMD: target org:
-			is_subcmd_matched, new_fargs = matches_subcommand(fargs, { "target", "org" })
-			if is_subcmd_matched and new_fargs then ManageTgtOrgCfg.ManageTargetOrg().run(new_fargs) end
-			-- CMD: run this apex:
-			is_subcmd_matched, new_fargs = matches_subcommand(fargs, { "run", "this", "apex" })
-			if is_subcmd_matched and new_fargs then
-				local run_anon_apex = RunAnonApex.RunAnonApex()
-				-- parse optional target org argument:
-				local target_org = nil
-				if new_fargs[1] == "-o" and new_fargs[2] then
-					target_org = new_fargs[2]
-				elseif new_fargs[1] == "--target-org" and new_fargs[2] then
-					target_org = new_fargs[2]
-				end
-				if target_org then run_anon_apex.set_target_org(target_org) end
-				-- execute the command:
-				run_anon_apex.run_this_buf()
-			end
-		end, {
+		vim.api.nvim_create_user_command("S", function(params) cmdline:parse(params.args) end, {
 			force = true,
 			nargs = "*",
-			complete = complete_fn,
+			complete = function(lead, line, pos) return cmdline:complete(lead, line, pos) end,
 		})
 	end
 
