@@ -10,6 +10,8 @@ local Subcmd = {
 	_tokens = {},
 	---@type brocade.cmdline.Option[]
 	_options = {},
+	---@type brocade.cmdline.PosArg[]
+	_pos_args = {},
 }
 Subcmd.__index = Subcmd
 
@@ -21,6 +23,13 @@ local Option = {
 	_complete_fn = function(_, _, _) return {} end,
 }
 Option.__index = Option
+
+---@class brocade.cmdline.PosArg
+local PosArg = {
+	---@type fun(lead: string, line: string, pos: number): string[]
+	_complete_fn = function(_, _, _) return {} end,
+}
+PosArg.__index = PosArg
 
 ---@param args string[]
 ---@param subcommand_words string[]
@@ -172,6 +181,9 @@ function Cmdline:complete(lead, line, pos)
 				opts_keys[#opts_keys + 1] = opt._key
 				if tokens[#tokens] == opt._key then return opt._complete_fn(lead, line, pos) end
 			end
+			for _, arg in ipairs(subcmd._pos_args) do
+				return arg._complete_fn(lead, line, pos)
+			end
 			return opts_keys
 		end
 	end
@@ -185,6 +197,12 @@ function Subcmd:new(tokens)
 	out._pos_args = {}
 	out._tokens = tokens
 	return out
+end
+
+function Subcmd:add_positional_arg()
+	local pos_arg = PosArg:new()
+	self._pos_args[#self._pos_args + 1] = pos_arg
+	return pos_arg
 end
 
 ---@param key string
@@ -207,5 +225,13 @@ end
 function Option:expect_value(complete_fn)
 	if complete_fn then self._complete_fn = complete_fn end
 end
+
+function PosArg:new()
+	local out = setmetatable({}, self)
+	return out
+end
+
+---@param complete_fn fun(lead: string, line: string, pos: number): string[]
+function PosArg:set_complete_fn(complete_fn) self._complete_fn = complete_fn end
 
 return Cmdline
