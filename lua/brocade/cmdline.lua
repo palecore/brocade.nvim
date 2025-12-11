@@ -17,7 +17,7 @@ Subcmd.__index = Subcmd
 local Option = {
 	---@type string
 	_key = "",
-	---@type (fun(lead: string, line: string, pos: number): string[])?
+	---@type fun(lead: string, line: string, pos: number): string[]
 	_complete_fn = function(_, _, _) return {} end,
 }
 Option.__index = Option
@@ -140,7 +140,11 @@ local function complete_subcmd(args, subcommands)
 	return options
 end
 
-function Cmdline:new() return setmetatable(vim.tbl_deep_extend("error", {}, self), self) end
+function Cmdline:new()
+	local out = setmetatable({}, self)
+	out._subcommands = {}
+	return out
+end
 
 ---@param tokens string[]
 function Cmdline:add_subcommand(tokens)
@@ -160,19 +164,14 @@ function Cmdline:complete(lead, line, pos)
 	---@type string[][]
 	local subcommands_tokens = {}
 	for _, subcmd in ipairs(self._subcommands) do
-		---@cast subcmd brocade.cmdline.Subcmd
-		--
 		subcommands_tokens[#subcommands_tokens + 1] = subcmd._tokens
-		--
 		local is_matching = matches_subcommand(tokens, subcmd._tokens)
 		if is_matching then
 			local opts_keys = {}
 			for _, opt in ipairs(subcmd._options) do
-				---@cast opt brocade.cmdline.Option
 				opts_keys[#opts_keys + 1] = opt._key
 				if tokens[#tokens] == opt._key then return opt._complete_fn(lead, line, pos) end
 			end
-			vim.notify(vim.inspect({ opts_keys }))
 			return opts_keys
 		end
 	end
@@ -181,7 +180,9 @@ end
 
 ---@param tokens string[]
 function Subcmd:new(tokens)
-	local out = setmetatable(vim.tbl_deep_extend("error", {}, self), self)
+	local out = setmetatable({}, self)
+	out._options = {}
+	out._pos_args = {}
 	out._tokens = tokens
 	return out
 end
@@ -197,7 +198,7 @@ end
 ---@param key string
 ---@return brocade.cmdline.Option
 function Option:new(key)
-	local out = setmetatable(vim.tbl_deep_extend("error", {}, self), self)
+	local out = setmetatable({}, self)
 	out._key = key
 	return out
 end
