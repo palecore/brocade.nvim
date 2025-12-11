@@ -10,6 +10,8 @@ local Subcmd = {
 	_tokens = {},
 	---@type brocade.cmdline.Option[]
 	_options = {},
+	---@type fun()
+	_on_parsed_fn = function() end,
 	---@type brocade.cmdline.PosArg[]
 	_pos_args = {},
 }
@@ -21,6 +23,8 @@ local Option = {
 	_key = "",
 	---@type fun(lead: string, line: string, pos: number): string[]
 	_complete_fn = function(_, _, _) return {} end,
+	---@type fun(value: string)
+	_on_value_fn = function(_) end,
 }
 Option.__index = Option
 
@@ -28,6 +32,8 @@ Option.__index = Option
 local PosArg = {
 	---@type fun(lead: string, line: string, pos: number): string[]
 	_complete_fn = function(_, _, _) return {} end,
+	---@type fun(value: string)
+	_on_value_fn = function(_) end,
 }
 PosArg.__index = PosArg
 
@@ -190,6 +196,31 @@ function Cmdline:complete(lead, line, pos)
 	return complete_subcmd(tokens, subcommands_tokens)
 end
 
+function Cmdline:parse(cmdline)
+	local fargs = vim.split(cmdline, "[ \t\r\n]+", { trimempty = true })
+	for _, subcmd in ipairs(self._subcommands) do
+		local is_matching, new_fargs = matches_subcommand(fargs, subcmd._tokens)
+		if is_matching and new_fargs then
+			if #new_fargs > 1 then
+				for _, option in ipairs(subcmd._options) do
+					if new_fargs[1] == option._key then
+						option._on_value_fn(new_fargs[2])
+						table.remove(new_fargs, 1)
+						table.remove(new_fargs, 1)
+					end
+					if #new_fargs < 2 then break end
+				end
+			end
+			if #new_fargs == 1 and #subcmd._pos_args == 1 then
+				subcmd._pos_args[1]._on_value_fn(new_fargs[1])
+				table.remove(new_fargs, 1)
+			end
+			subcmd._on_parsed_fn()
+			return
+		end
+	end
+end
+
 ---@param tokens string[]
 function Subcmd:new(tokens)
 	local out = setmetatable({}, self)
@@ -198,6 +229,9 @@ function Subcmd:new(tokens)
 	out._tokens = tokens
 	return out
 end
+
+---@param fn fun()
+function Subcmd:on_parsed(fn) self._on_parsed_fn = fn end
 
 function Subcmd:add_positional_arg()
 	local pos_arg = PosArg:new()
@@ -226,6 +260,9 @@ function Option:expect_value(complete_fn)
 	if complete_fn then self._complete_fn = complete_fn end
 end
 
+---@param on_value_fn fun(value: string)
+function Option:on_value(on_value_fn) self._on_value_fn = on_value_fn end
+
 function PosArg:new()
 	local out = setmetatable({}, self)
 	return out
@@ -233,5 +270,8 @@ end
 
 ---@param complete_fn fun(lead: string, line: string, pos: number): string[]
 function PosArg:set_complete_fn(complete_fn) self._complete_fn = complete_fn end
+
+---@param on_value_fn fun(value: string)
+function PosArg:on_value(on_value_fn) self._on_value_fn = on_value_fn end
 
 return Cmdline
