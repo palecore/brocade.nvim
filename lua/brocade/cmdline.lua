@@ -34,6 +34,8 @@ local PosArg = {
 	_complete_fn = function(_, _, _) return {} end,
 	---@type fun(value: string)
 	_on_value_fn = function(_) end,
+	---@type boolean
+	_any = false,
 }
 PosArg.__index = PosArg
 
@@ -187,8 +189,30 @@ function Cmdline:complete(lead, line, pos)
 				opts_keys[#opts_keys + 1] = opt._key
 				if tokens[#tokens] == opt._key then return opt._complete_fn(lead, line, pos) end
 			end
-			for _, arg in ipairs(subcmd._pos_args) do
-				return arg._complete_fn(lead, line, pos)
+			-- if there are positional args, include their completions alongside option keys
+			if #subcmd._pos_args > 0 then
+				local any_pos = nil
+				for _, arg in ipairs(subcmd._pos_args) do
+					if arg._any then
+						any_pos = arg
+						break
+					end
+				end
+				local pos_completions = {}
+				if any_pos then
+					pos_completions = any_pos._complete_fn(lead, line, pos)
+				else
+					pos_completions = subcmd._pos_args[1]._complete_fn(lead, line, pos)
+				end
+				local results = {}
+				for _, v in ipairs(opts_keys) do
+					table.insert(results, v)
+				end
+				for _, v in ipairs(pos_completions) do
+					table.insert(results, v)
+				end
+				table.sort(results)
+				return results
 			end
 			return opts_keys
 		end
@@ -211,9 +235,34 @@ function Cmdline:parse(cmdline)
 					if #new_fargs < 2 then break end
 				end
 			end
-			if #new_fargs == 1 and #subcmd._pos_args == 1 then
-				subcmd._pos_args[1]._on_value_fn(new_fargs[1])
-				table.remove(new_fargs, 1)
+			-- handle positional args: first non-any positional (if present), then any-positional for remaining args
+			if #subcmd._pos_args > 0 then
+				-- first non-any positional
+				local first_pos = nil
+				for _, pa in ipairs(subcmd._pos_args) do
+					if not pa._any then
+						first_pos = pa
+						break
+					end
+				end
+				if first_pos and #new_fargs >= 1 then
+					first_pos._on_value_fn(new_fargs[1])
+					table.remove(new_fargs, 1)
+				end
+				-- any-positional consumes remaining args
+				local any_pos = nil
+				for _, pa in ipairs(subcmd._pos_args) do
+					if pa._any then
+						any_pos = pa
+						break
+					end
+				end
+				if any_pos then
+					for _, v in ipairs(new_fargs) do
+						any_pos._on_value_fn(v)
+					end
+					new_fargs = {}
+				end
 			end
 			subcmd._on_parsed_fn()
 			return
@@ -235,6 +284,14 @@ function Subcmd:on_parsed(fn) self._on_parsed_fn = fn end
 
 function Subcmd:add_positional_arg()
 	local pos_arg = PosArg:new()
+	self._pos_args[#self._pos_args + 1] = pos_arg
+	return pos_arg
+end
+
+function Subcmd:add_any_positional_args(complete_fn)
+	local pos_arg = PosArg:new()
+	pos_arg._any = true
+	if complete_fn then pos_arg._complete_fn = complete_fn end
 	self._pos_args[#self._pos_args + 1] = pos_arg
 	return pos_arg
 end
