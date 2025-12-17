@@ -93,7 +93,6 @@ do
 		if target_org then run_anon_apex.set_target_org(target_org) end
 		run_anon_apex.run_this_buf()
 	end)
-	vim.notify(vim.inspect { cmdline })
 end
 
 ---@type fun(lead: string, line: string, pos: number): string[]
