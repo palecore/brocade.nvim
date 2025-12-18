@@ -22,9 +22,13 @@ local GetTraceFlags = {
 	_user_id = nil,
 	---@type string
 	_debug_lvl_id = nil,
+	---@type string
+	_debug_level_name = "SFDC_DevConsole",
 }
 GetTraceFlags.__index = GetTraceFlags
 M.Get = GetTraceFlags
+
+function GetTraceFlags:set_debug_level_name(name) self._debug_level_name = name end
 
 ---@class brocade.trace-flag.GetTraceFlag.Result
 local GetTraceFlagResult = {
@@ -140,7 +144,7 @@ function GetTraceFlags:_run__fetch_debug_lvl(user_id_response)
 	local auth_info = self._auth_info
 	req:use_auth_info(auth_info)
 	req:set_tooling_suburl("/query")
-	local debug_lvl_dev_name = "SFDC_DevConsole"
+	local debug_lvl_dev_name = self._debug_level_name or "SFDC_DevConsole"
 	local debug_lvl_dev_name_sq_esc = sq_escape(debug_lvl_dev_name)
 	req:set_kv_data(
 		"q",

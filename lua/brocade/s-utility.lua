@@ -114,18 +114,28 @@ do
 
 	-- TRACE FLAG GET
 	local trace_flag_get_sub = cmdline:add_subcommand({ "trace", "flag", "get" })
-	local trace_flag_get_inputs = { { target_org = nil } }
+	local trace_flag_get_inputs = { { target_org = nil, debug_level = nil } }
 	local tfg_target_org_opt = trace_flag_get_sub:add_option("--target-org")
 	tfg_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
 	tfg_target_org_opt:on_value(function(target_org)
 		trace_flag_get_inputs[1] = trace_flag_get_inputs[1] or {}
 		trace_flag_get_inputs[1].target_org = target_org
 	end)
+	local tfg_debug_level_opt = trace_flag_get_sub:add_option("--debug-level")
+	tfg_debug_level_opt:expect_value(function(lead, line, pos)
+		return { "SFDC_DevConsole", "ReplayDebuggerLevels" }
+	end)
+	tfg_debug_level_opt:on_value(function(debug_level)
+		trace_flag_get_inputs[1] = trace_flag_get_inputs[1] or {}
+		trace_flag_get_inputs[1].debug_level = debug_level
+	end)
 	trace_flag_get_sub:on_parsed(function()
 		local get = TraceFlag.Get:new()
 		if trace_flag_get_inputs[1].target_org then
 			get:set_target_org(trace_flag_get_inputs[1].target_org)
 		end
+		local dbg = trace_flag_get_inputs[1].debug_level or "SFDC_DevConsole"
+		get:set_debug_level_name(dbg)
 		vim.schedule(function() get:present_async() end)
 	end)
 end
