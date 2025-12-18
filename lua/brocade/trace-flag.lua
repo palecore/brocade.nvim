@@ -115,18 +115,18 @@ function GetTraceFlags:_run__fetch_user_id(auth_info)
 	---@cast auth_info brocade.org-session.AuthInfo
 	self._auth_info = assert(auth_info)
 	--
-	local req = CurlReq()
-	req.set_access_token(auth_info.get_access_token())
-	req.set_api_version(auth_info.get_api_version())
-	req.set_instance_url(auth_info.get_instance_url())
-	req.set_tooling_suburl("/query")
+	local req = CurlReq:new()
+	req:set_access_token(auth_info.get_access_token())
+	req:set_api_version(auth_info.get_api_version())
+	req:set_instance_url(auth_info.get_instance_url())
+	req:set_tooling_suburl("/query")
 	local username_sq_esc = sq_escape(auth_info.get_username())
-	req.set_kv_data(
+	req:set_kv_data(
 		"q",
 		("SELECT Id FROM User WHERE Username = '%s' LIMIT 1"):format(username_sq_esc)
 	)
 	self._logger:tell_wip("Quering user info...")
-	req.send(function(user_id_response) self:_run__fetch_debug_lvl(user_id_response) end)
+	req:send(function(user_id_response) self:_run__fetch_debug_lvl(user_id_response) end)
 end
 function GetTraceFlags:_run__fetch_debug_lvl(user_id_response)
 	assert(user_id_response, "User query result invalid!")
@@ -138,22 +138,22 @@ function GetTraceFlags:_run__fetch_debug_lvl(user_id_response)
 	local user_record = records[1]
 	self._user_id = assert(user_record.Id)
 	-- fetch debug level ID:
-	local req = CurlReq()
+	local req = CurlReq:new()
 	local auth_info = self._auth_info
-	req.set_access_token(auth_info.get_access_token())
-	req.set_api_version(auth_info.get_api_version())
-	req.set_instance_url(auth_info.get_instance_url())
-	req.set_tooling_suburl("/query")
+	req:set_access_token(auth_info.get_access_token())
+	req:set_api_version(auth_info.get_api_version())
+	req:set_instance_url(auth_info.get_instance_url())
+	req:set_tooling_suburl("/query")
 	local debug_lvl_dev_name = "SFDC_DevConsole"
 	local debug_lvl_dev_name_sq_esc = sq_escape(debug_lvl_dev_name)
-	req.set_kv_data(
+	req:set_kv_data(
 		"q",
 		("SELECT Id FROM DebugLevel WHERE DeveloperName = '%s' LIMIT 1"):format(
 			debug_lvl_dev_name_sq_esc
 		)
 	)
 	self._logger:tell_wip("Querying debug level info...")
-	req.send(function(debug_lvl_resp) self:_run__fetch_prev_trace_flag(debug_lvl_resp) end)
+	req:send(function(debug_lvl_resp) self:_run__fetch_prev_trace_flag(debug_lvl_resp) end)
 end
 function GetTraceFlags:_run__fetch_prev_trace_flag(debug_lvl_resp)
 	local resp = debug_lvl_resp
@@ -166,17 +166,17 @@ function GetTraceFlags:_run__fetch_prev_trace_flag(debug_lvl_resp)
 	local debug_lvl_record = records[1]
 	self._debug_lvl_id = assert(debug_lvl_record.Id)
 	--
-	local req = CurlReq()
+	local req = CurlReq:new()
 	local auth_info = self._auth_info
-	req.set_access_token(auth_info.get_access_token())
-	req.set_api_version(auth_info.get_api_version())
-	req.set_instance_url(auth_info.get_instance_url())
-	req.set_tooling_suburl("/query")
+	req:set_access_token(auth_info.get_access_token())
+	req:set_api_version(auth_info.get_api_version())
+	req:set_instance_url(auth_info.get_instance_url())
+	req:set_tooling_suburl("/query")
 	local debug_lvl_id = assert(self._debug_lvl_id)
 	local debug_lvl_id_sq_esc = sq_escape(debug_lvl_id)
 	local user_id = assert(self._user_id)
 	local user_id_sq_esc = sq_escape(user_id)
-	req.set_kv_data(
+	req:set_kv_data(
 		"q",
 		("SELECT Id, StartDate, ExpirationDate FROM TraceFlag WHERE DebugLevelId = '%s' AND TracedEntityId = '%s' LIMIT 1"):format(
 			debug_lvl_id_sq_esc,
@@ -184,7 +184,7 @@ function GetTraceFlags:_run__fetch_prev_trace_flag(debug_lvl_resp)
 		)
 	)
 	self._logger:tell_wip("Querying trace flag...")
-	req.send(
+	req:send(
 		function(prev_trace_flag_response) self:_run__parse_prev_trace_flag(prev_trace_flag_response) end
 	)
 end
@@ -257,12 +257,12 @@ function EnableTraceFlags:run__upsert_trace_flag(prev_trace_flag_result)
 	-- if no existing trace flag, create one; otherwise patch existing
 	if result:trace_flags_count() < 1 then
 		-- create
-		local req = CurlReq()
-		req.set_method("POST")
-		req.set_access_token(self._auth_info.get_access_token())
-		req.set_api_version(self._auth_info.get_api_version())
-		req.set_instance_url(self._auth_info.get_instance_url())
-		req.set_tooling_suburl("/sobjects/TraceFlag")
+		local req = CurlReq:new()
+		req:set_method("POST")
+		req:set_access_token(self._auth_info.get_access_token())
+		req:set_api_version(self._auth_info.get_api_version())
+		req:set_instance_url(self._auth_info.get_instance_url())
+		req:set_tooling_suburl("/sobjects/TraceFlag")
 		local now_dt = os.date("*t")
 		now_dt.min = now_dt.min - 1
 		---@cast now_dt osdate
@@ -273,7 +273,7 @@ function EnableTraceFlags:run__upsert_trace_flag(prev_trace_flag_result)
 		---@cast soon_dt osdate
 		local soon_time = os.time(soon_dt)
 		local soon_str = os.date("%Y-%m-%dT%T%z", soon_time)
-		req.set_json_data(vim.json.encode({
+		req:set_json_data(vim.json.encode({
 			["ApexCode"] = "Finest",
 			["ApexProfiling"] = "Error",
 			["Callout"] = "Error",
@@ -289,7 +289,7 @@ function EnableTraceFlags:run__upsert_trace_flag(prev_trace_flag_result)
 			["DebugLevelId"] = debug_lvl_id,
 		}))
 		self._logger:tell_wip("Creating new trace flag...")
-		req.send(function(post_res)
+		req:send(function(post_res)
 			-- success of sobject create can be inferred from response; simply finish on any response
 			if post_res then
 				self._logger:tell_finished("Trace flag created.")
@@ -303,11 +303,11 @@ function EnableTraceFlags:run__upsert_trace_flag(prev_trace_flag_result)
 	assert(result:trace_flags_count() == 1, "Query result size should be 1 at this point!")
 	local prev_trace_flag_url = result:trace_flag_url_at(1)
 	assert(prev_trace_flag_url, "Previous Trace Flag URL invalid!")
-	local req = CurlReq()
-	req.set_access_token(self._auth_info.get_access_token())
-	req.set_api_version(self._auth_info.get_api_version())
-	req.set_instance_url(self._auth_info.get_instance_url())
-	req.set_method("PATCH")
+	local req = CurlReq:new()
+	req:set_access_token(self._auth_info.get_access_token())
+	req:set_api_version(self._auth_info.get_api_version())
+	req:set_instance_url(self._auth_info.get_instance_url())
+	req:set_method("PATCH")
 	local now_dt = os.date("*t")
 	now_dt.min = now_dt.min - 1
 	---@cast now_dt osdate
@@ -318,14 +318,14 @@ function EnableTraceFlags:run__upsert_trace_flag(prev_trace_flag_result)
 	---@cast soon_dt osdate
 	local soon_time = os.time(soon_dt)
 	local soon_str = os.date("%Y-%m-%dT%T%z", soon_time)
-	req.set_json_data(vim.json.encode({
+	req:set_json_data(vim.json.encode({
 		["StartDate"] = now_str,
 		["ExpirationDate"] = soon_str,
 	}))
-	req.set_suburl(prev_trace_flag_url)
-	req.set_expect_json(false)
+	req:set_suburl(prev_trace_flag_url)
+	req:set_expect_json(false)
 	self._logger:tell_wip("Updating previous trace flag...")
-	req.send(function(patch_res)
+	req:send(function(patch_res)
 		if patch_res then
 			self._logger:tell_finished("Trace flag updated.")
 		else

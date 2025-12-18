@@ -92,18 +92,18 @@ function M.RunAnonApex()
 		_self.run_this_buf_fetch_user_id()
 	end
 	function _self.run_this_buf_fetch_user_id()
-		local req = CurlReq()
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_tooling_suburl("/query")
+		local req = CurlReq:new()
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_tooling_suburl("/query")
 		local username_sq_esc = sq_escape(_self.username)
-		req.set_kv_data(
+		req:set_kv_data(
 			"q",
 			("SELECT Id FROM User WHERE Username = '%s' LIMIT 1"):format(username_sq_esc)
 		)
 		tell_wip("Quering user info...")
-		req.send(_self.run_this_buf_parse_user_id)
+		req:send(_self.run_this_buf_parse_user_id)
 	end
 	function _self.run_this_buf_parse_user_id(result)
 		assert(result, "User query result invalid!")
@@ -115,21 +115,21 @@ function M.RunAnonApex()
 		local user_record = records[1]
 		_self.user_id = assert(user_record.Id)
 		-- fetch debug level ID:
-		local req = CurlReq()
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_tooling_suburl("/query")
+		local req = CurlReq:new()
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_tooling_suburl("/query")
 		local debug_lvl_dev_name = "SFDC_DevConsole"
 		local debug_lvl_dev_name_sq_esc = sq_escape(debug_lvl_dev_name)
-		req.set_kv_data(
+		req:set_kv_data(
 			"q",
 			("SELECT Id FROM DebugLevel WHERE DeveloperName = '%s' LIMIT 1"):format(
 				debug_lvl_dev_name_sq_esc
 			)
 		)
 		tell_wip("Quering debug level info...")
-		req.send(_self.run_this_buf_parse_debug_lvl_query)
+		req:send(_self.run_this_buf_parse_debug_lvl_query)
 	end
 	function _self.run_this_buf_parse_debug_lvl_query(result)
 		assert(result, "Debug Level query result invalid!")
@@ -144,16 +144,16 @@ function M.RunAnonApex()
 	end
 	function _self.run_this_buf_query_prev_trace_flag()
 		-- todo query
-		local req = CurlReq()
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_tooling_suburl("/query")
+		local req = CurlReq:new()
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_tooling_suburl("/query")
 		local debug_lvl_id = assert(_self.debug_lvl_id)
 		local debug_lvl_id_sq_esc = sq_escape(debug_lvl_id)
 		local user_id = assert(_self.user_id)
 		local user_id_sq_esc = sq_escape(user_id)
-		req.set_kv_data(
+		req:set_kv_data(
 			"q",
 			("SELECT Id FROM TraceFlag WHERE DebugLevelId = '%s' AND TracedEntityId = '%s' LIMIT 1"):format(
 				debug_lvl_id_sq_esc,
@@ -161,7 +161,7 @@ function M.RunAnonApex()
 			)
 		)
 		tell_wip("Querying previous trace flag...")
-		req.send(_self.run_this_buf_patch_prev_trace_flag)
+		req:send(_self.run_this_buf_patch_prev_trace_flag)
 	end
 	function _self.run_this_buf_patch_prev_trace_flag(result)
 		assert(result, "Trace Flag query result invalid!")
@@ -182,11 +182,11 @@ function M.RunAnonApex()
 		local prev_trace_flag_url = (prev_trace_flag_record.attributes or {}).url
 		assert(prev_trace_flag_url, "Previous Trace Flag URL invalid!")
 		-- patch previous trace flag record with new date range:
-		local req = CurlReq()
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_method("PATCH")
+		local req = CurlReq:new()
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_method("PATCH")
 		local now_dt = os.date("*t")
 		now_dt.min = now_dt.min - 1
 		---@cast now_dt osdate
@@ -197,22 +197,22 @@ function M.RunAnonApex()
 		---@cast soon_dt osdate
 		local soon_time = os.time(soon_dt)
 		local soon_str = os.date("%Y-%m-%dT%T%z", soon_time)
-		req.set_json_data(vim.json.encode({
+		req:set_json_data(vim.json.encode({
 			["StartDate"] = now_str,
 			["ExpirationDate"] = soon_str,
 		}))
-		req.set_suburl(prev_trace_flag_url)
-		req.set_expect_json(false)
+		req:set_suburl(prev_trace_flag_url)
+		req:set_expect_json(false)
 		tell_wip("Updating previous trace flag...")
-		req.send(_self.run_this_buf_parse_trace_flag_post)
+		req:send(_self.run_this_buf_parse_trace_flag_post)
 	end
 	function _self.run_this_buf_create_trace_flag(_)
-		local req = CurlReq()
-		req.set_method("POST")
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_tooling_suburl("/sobjects/traceFlag")
+		local req = CurlReq:new()
+		req:set_method("POST")
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_tooling_suburl("/sobjects/traceFlag")
 		local now_dt = os.date("*t")
 		now_dt.min = now_dt.min - 1
 		---@cast now_dt osdate
@@ -225,7 +225,7 @@ function M.RunAnonApex()
 		local soon_str = os.date("%Y-%m-%dT%T%z", soon_time)
 		local user_id = _self.user_id
 		local debug_lvl_id = assert(_self.debug_lvl_id)
-		req.set_json_data(vim.json.encode({
+		req:set_json_data(vim.json.encode({
 			["ApexCode"] = "Finest",
 			["ApexProfiling"] = "Error",
 			["Callout"] = "Error",
@@ -241,7 +241,7 @@ function M.RunAnonApex()
 			["DebugLevelId"] = debug_lvl_id,
 		}))
 		tell_wip("Creating new trace flag...")
-		req.send(_self.run_this_buf_parse_trace_flag_post)
+		req:send(_self.run_this_buf_parse_trace_flag_post)
 	end
 	function _self.run_this_buf_parse_trace_flag_post(result)
 		if #result == 0 then
@@ -253,14 +253,14 @@ function M.RunAnonApex()
 	end
 	function _self.run_this_buf_exec_anon_apex()
 		local anon_body = assert(_self.anonymous_body, "Anon body is not set!")
-		local req = CurlReq()
-		req.set_method("GET")
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_tooling_suburl("/executeAnonymous")
-		req.set_kv_data("anonymousBody", anon_body)
-		req.send(_self.run_this_buf_parse_anon_apex)
+		local req = CurlReq:new()
+		req:set_method("GET")
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_tooling_suburl("/executeAnonymous")
+		req:set_kv_data("anonymousBody", anon_body)
+		req:send(_self.run_this_buf_parse_anon_apex)
 	end
 	function _self.run_this_buf_parse_anon_apex(result)
 		assert(result, "Result invalid!")
@@ -313,15 +313,15 @@ function M.RunAnonApex()
 		local username_sq_esc = sq_escape(username)
 		--
 
-		local req = CurlReq()
-		req.set_method("GET")
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_tooling_suburl("/query")
+		local req = CurlReq:new()
+		req:set_method("GET")
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_tooling_suburl("/query")
 		local operation = ("/services/data/v%s/tooling/executeAnonymous"):format(_self.api_version)
 		local operation_sq_esc = sq_escape(operation)
-		req.set_kv_data(
+		req:set_kv_data(
 			"q",
 			("SELECT Id FROM ApexLog WHERE LogUser.Username = '%s' AND OPERATION = '%s' ORDER BY StartTime DESC LIMIT 1"):format(
 				username_sq_esc,
@@ -329,7 +329,7 @@ function M.RunAnonApex()
 			)
 		)
 		tell_wip("Querying Apex log...")
-		req.send(_self.run_this_buf_parse_log_query)
+		req:send(_self.run_this_buf_parse_log_query)
 	end
 	function _self.run_this_buf_parse_log_query(result)
 		assert(result, "Apex Log query result invalid!")
@@ -342,15 +342,15 @@ function M.RunAnonApex()
 		_self.apex_log_id = assert(apex_log_record.Id)
 		local apex_log_path = assert(apex_log_record.attributes.url .. "/Body")
 		--
-		local req = CurlReq()
-		req.set_method("GET")
-		req.set_access_token(_self.access_token)
-		req.set_api_version(_self.api_version)
-		req.set_instance_url(_self.instance_url)
-		req.set_suburl(apex_log_path)
-		req.set_expect_json(false)
+		local req = CurlReq:new()
+		req:set_method("GET")
+		req:set_access_token(_self.access_token)
+		req:set_api_version(_self.api_version)
+		req:set_instance_url(_self.instance_url)
+		req:set_suburl(apex_log_path)
+		req:set_expect_json(false)
 		tell_wip("Fetching Apex log body...")
-		req.send(vim.schedule_wrap(_self.run_this_buf_parse_log_body))
+		req:send(vim.schedule_wrap(_self.run_this_buf_parse_log_body))
 	end
 	function _self.run_this_buf_parse_log_body(log_text)
 		local apex_log_id = assert(_self.apex_log_id)
