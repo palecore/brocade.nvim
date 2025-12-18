@@ -5,6 +5,7 @@
 local Cmdline = require("brocade.cmdline")
 local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
 local RunAnonApex = require("brocade.run-anon-apex")
+local GetApexLogs = require("brocade.debug-logs").Get
 local TraceFlag = require("brocade.trace-flag")
 
 local M = {}
@@ -136,6 +137,28 @@ do
 		end
 		local dbg = trace_flag_get_inputs[1].debug_level or "SFDC_DevConsole"
 		get:set_debug_level_name(dbg)
+		vim.schedule(function() get:present_async() end)
+	end)
+
+	-- GET DEBUG LOGS
+	local debug_logs_sub = cmdline:add_subcommand({ "get", "debug", "logs" })
+	local debug_logs_inputs = { { target_org = nil, limit = nil } }
+	local dlg_target_org_opt = debug_logs_sub:add_option("--target-org")
+	dlg_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	dlg_target_org_opt:on_value(function(target_org)
+		debug_logs_inputs[1] = debug_logs_inputs[1] or {}
+		debug_logs_inputs[1].target_org = target_org
+	end)
+	local limit_opt = debug_logs_sub:add_option("--limit")
+	limit_opt:expect_value(function() return { "10", "20", "5" } end)
+	limit_opt:on_value(function(limit)
+		debug_logs_inputs[1] = debug_logs_inputs[1] or {}
+		debug_logs_inputs[1].limit = tonumber(limit)
+	end)
+	debug_logs_sub:on_parsed(function()
+		local get = GetApexLogs:new()
+		if debug_logs_inputs[1].target_org then get:set_target_org(debug_logs_inputs[1].target_org) end
+		if debug_logs_inputs[1].limit then get:set_limit(debug_logs_inputs[1].limit) end
 		vim.schedule(function() get:present_async() end)
 	end)
 end
