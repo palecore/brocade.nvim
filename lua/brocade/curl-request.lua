@@ -31,6 +31,13 @@ function CurlRequest:set_kv_data(k, v)
 	self.data_value = v
 end
 
+---@param auth_info brocade.org-session.AuthInfo
+function CurlRequest:use_auth_info(auth_info)
+	self:set_access_token(auth_info.get_access_token())
+	self:set_api_version(auth_info.get_api_version())
+	self:set_instance_url(auth_info.get_instance_url())
+end
+
 function CurlRequest:send(cb)
 	-- required inputs:
 	local instance_url = assert(self.instance_url)
