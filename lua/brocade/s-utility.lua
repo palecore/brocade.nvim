@@ -5,6 +5,7 @@
 local Cmdline = require("brocade.cmdline")
 local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
 local RunAnonApex = require("brocade.run-anon-apex")
+local TraceFlag = require("brocade.trace-flag")
 
 local M = {}
 
@@ -92,6 +93,40 @@ do
 		local run_anon_apex = RunAnonApex.RunAnonApex()
 		if target_org then run_anon_apex.set_target_org(target_org) end
 		run_anon_apex.run_this_buf()
+	end)
+
+	-- TRACE FLAG ENABLE
+	local trace_flag_enable_sub = cmdline:add_subcommand({ "trace", "flag", "enable" })
+	local trace_flag_enable_inputs = { { target_org = nil } }
+	local tfe_target_org_opt = trace_flag_enable_sub:add_option("--target-org")
+	tfe_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	tfe_target_org_opt:on_value(function(target_org)
+		trace_flag_enable_inputs[1] = trace_flag_enable_inputs[1] or {}
+		trace_flag_enable_inputs[1].target_org = target_org
+	end)
+	trace_flag_enable_sub:on_parsed(function()
+		local enable = TraceFlag.Enable:new()
+		if trace_flag_enable_inputs[1].target_org then
+			enable:set_target_org(trace_flag_enable_inputs[1].target_org)
+		end
+		vim.schedule(function() enable:run_async() end)
+	end)
+
+	-- TRACE FLAG GET
+	local trace_flag_get_sub = cmdline:add_subcommand({ "trace", "flag", "get" })
+	local trace_flag_get_inputs = { { target_org = nil } }
+	local tfg_target_org_opt = trace_flag_get_sub:add_option("--target-org")
+	tfg_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	tfg_target_org_opt:on_value(function(target_org)
+		trace_flag_get_inputs[1] = trace_flag_get_inputs[1] or {}
+		trace_flag_get_inputs[1].target_org = target_org
+	end)
+	trace_flag_get_sub:on_parsed(function()
+		local get = TraceFlag.Get:new()
+		if trace_flag_get_inputs[1].target_org then
+			get:set_target_org(trace_flag_get_inputs[1].target_org)
+		end
+		vim.schedule(function() get:present_async() end)
 	end)
 end
 
