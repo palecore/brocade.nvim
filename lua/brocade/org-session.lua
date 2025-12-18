@@ -74,20 +74,20 @@ local function fetch_auth_info(target_org, callback)
 	end)
 end
 
-function M.FetchAuthInfoAsync()
-	local self = {}
-	local _self = {
-		target_org = nil,
-		on_auth_info = function() end,
-	}
+local FetchAuthInfo = {
+	_target_org = nil,
+}
+FetchAuthInfo.__index = FetchAuthInfo
+M.FetchAuthInfo = FetchAuthInfo
 
-	function self.set_target_org(target_org) _self.target_org = target_org end
-	---@param cb fun(auth_info: brocade.org-session.AuthInfo)
-	function self.set_on_auth_info(cb) _self.on_auth_info = cb end
+function FetchAuthInfo:new() return setmetatable({}, self) end
 
-	function self.run() fetch_auth_info(_self.target_org, _self.on_auth_info) end
+function FetchAuthInfo:set_target_org(target_org) self._target_org = target_org end
 
-	return self
+---@param cb? fun(auth_info: brocade.org-session.AuthInfo)
+function FetchAuthInfo:run_async(cb)
+	cb = cb or function() end
+	fetch_auth_info(self._target_org, cb)
 end
 
 return M

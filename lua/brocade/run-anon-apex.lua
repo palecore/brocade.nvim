@@ -8,7 +8,7 @@ local M = {}
 -- IMPORTS
 
 local CurlReq = require("brocade.curl-request").CurlRequest
-local FetchAuthInfoAsync = require("brocade.org-session").FetchAuthInfoAsync
+local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
 
 -- IMPLEMENTATION
 
@@ -79,10 +79,9 @@ function M.RunAnonApex()
 		local buf_text = table.concat(buf_lines, "\n")
 		_self.anonymous_body = buf_text
 		tell_wip("Fetching auth info...")
-		local fetch_auth_info = FetchAuthInfoAsync()
-		if _self.target_org then fetch_auth_info.set_target_org(_self.target_org) end
-		fetch_auth_info.set_on_auth_info(_self.run_this_buf_save_auth_info)
-		fetch_auth_info.run()
+		local fetch_auth_info = FetchAuthInfo:new()
+		if _self.target_org then fetch_auth_info:set_target_org(_self.target_org) end
+		fetch_auth_info:run_async(function(auth_info) _self.run_this_buf_save_auth_info(auth_info) end)
 	end
 	function _self.run_this_buf_save_auth_info(auth_info)
 		---@cast auth_info brocade.org-session.AuthInfo
