@@ -153,7 +153,7 @@ function Deploy:_run__post_or_put_class(resp)
 	-- NOTE: Metadata Container name can have at most 32 characters:
 	local container_name = self._class_name:sub(1, 32)
 	req:set_json_data(vim.json.encode({ Name = container_name }))
-	self._logger:tell_wip("Creating MetadataContainer...")
+	self._logger:tell_wip("Preparing deployment...")
 	req:send(function(container)
 		assert(container and container.id, "MetadataContainer creation failed")
 		local container_id = container.id
@@ -166,7 +166,7 @@ function Deploy:_run__post_or_put_class(resp)
 			{ MetadataContainerId = container_id, Body = self._class_body, FullName = self._class_name }
 		if existing_id then member_body.ContentEntityId = existing_id end
 		member_req:set_json_data(vim.json.encode(member_body))
-		self._logger:tell_wip("Creating ApexClassMember...")
+		self._logger:tell_wip("Attaching Apex class to the deployment...")
 		member_req:send(function(member)
 			assert(member and member.id, "ApexClassMember creation failed")
 			-- 3) submit ContainerAsyncRequest
@@ -177,7 +177,7 @@ function Deploy:_run__post_or_put_class(resp)
 			car_req:set_json_data(
 				vim.json.encode({ IsCheckOnly = false, MetadataContainerId = container_id })
 			)
-			self._logger:tell_wip("Submitting ContainerAsyncRequest...")
+			self._logger:tell_wip("Submitting deployment...")
 			car_req:send(function(car)
 				assert(car and car.id, "ContainerAsyncRequest creation failed")
 				-- 4) poll for status
@@ -218,6 +218,7 @@ function Deploy:_run__post_or_put_class(resp)
 						end
 					end)
 				end
+				self._logger:tell_wip("Polling deployment status...")
 				poll()
 			end)
 		end)
