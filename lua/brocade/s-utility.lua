@@ -162,6 +162,25 @@ do
 		if debug_logs_inputs[1].limit then get:set_limit(debug_logs_inputs[1].limit) end
 		vim.schedule(function() get:present_async() end)
 	end)
+
+	-- APEX RETRIEVE (this buffer)
+	local apex_retrieve_sub = cmdline:add_subcommand({ "apex", "retrieve" })
+	local apex_retrieve_inputs = { { target_org = nil } }
+	-- option: target-org
+	local ar_target_org_opt = apex_retrieve_sub:add_option("--target-org")
+	ar_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	ar_target_org_opt:on_value(function(target_org)
+		apex_retrieve_inputs[1] = apex_retrieve_inputs[1] or {}
+		apex_retrieve_inputs[1].target_org = target_org
+	end)
+	-- entrypoint
+	apex_retrieve_sub:on_parsed(function()
+		local get = ApexClass.Get:new()
+		if apex_retrieve_inputs[1].target_org then
+			get:set_target_org(apex_retrieve_inputs[1].target_org)
+		end
+		get:load_this_buf_async()
+	end)
 end
 
 ---@type fun(lead: string, line: string, pos: number): string[]
