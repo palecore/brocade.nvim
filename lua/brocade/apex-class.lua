@@ -136,13 +136,13 @@ function Deploy:_run__query(auth_info)
 end
 
 function Deploy:_run__post_or_put_class(resp)
+	self._existing_id = nil
 	assert(resp, "ApexClass query result invalid!")
 	assert(resp.done == true, "Query not finished!")
 	local exists = resp.size and resp.size >= 1
-	local existing_id = nil
 	if exists then
 		local record = resp.records[1]
-		existing_id = record.Id
+		self._existing_id = record.Id
 	end
 	assert(self._class_body ~= nil, "Class body must be set for deploy")
 	-- 1) create MetadataContainer
@@ -154,75 +154,87 @@ function Deploy:_run__post_or_put_class(resp)
 	local container_name = self._class_name:sub(1, 32)
 	req:set_json_data(vim.json.encode({ Name = container_name }))
 	self._logger:tell_wip("Preparing deployment...")
-	req:send(function(container)
-		assert(container and container.id, "MetadataContainer creation failed")
-		local container_id = container.id
-		-- 2) create ApexClassMember
-		local member_req = CurlReq:new()
-		member_req:use_auth_info(self._auth_info)
-		member_req:set_tooling_suburl("/sobjects/ApexClassMember")
-		member_req:set_method("POST")
-		local member_body =
-			{ MetadataContainerId = container_id, Body = self._class_body, FullName = self._class_name }
-		if existing_id then member_body.ContentEntityId = existing_id end
-		member_req:set_json_data(vim.json.encode(member_body))
-		self._logger:tell_wip("Attaching Apex class to the deployment...")
-		member_req:send(function(member)
-			assert(member and member.id, "ApexClassMember creation failed")
-			-- 3) submit ContainerAsyncRequest
-			local car_req = CurlReq:new()
-			car_req:use_auth_info(self._auth_info)
-			car_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest")
-			car_req:set_method("POST")
-			car_req:set_json_data(
-				vim.json.encode({ IsCheckOnly = false, MetadataContainerId = container_id })
-			)
-			self._logger:tell_wip("Submitting deployment...")
-			car_req:send(function(car)
-				assert(car and car.id, "ContainerAsyncRequest creation failed")
-				-- 4) poll for status
-				local function poll()
-					local status_req = CurlReq:new()
-					status_req:use_auth_info(self._auth_info)
-					status_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest/" .. car.id)
-					status_req:send(function(status)
-						local state = status and status.State
-						if state == "Queued" or state == "InProgress" then
-							vim.defer_fn(poll, CAR_POLL_DURATION_MS)
-							return
-						end
-						-- cleanup container
-						local function cleanup(cb)
-							local del = CurlReq:new()
-							del:use_auth_info(self._auth_info)
-							del:set_tooling_suburl("/sobjects/MetadataContainer/" .. container_id)
-							del:set_method("DELETE")
-							del:set_expect_json(false)
-							self._logger:tell_wip("Cleaning up deployment...")
-							del:send(cb)
-						end
-						if state == "Failed" then
-							cleanup(
-								function() self._logger:tell_failed(status.ErrorMsg or "Deployment failed!") end
-							)
-						end
-						if state == "Completed" then
-							cleanup(function()
-								self._logger:tell_finished("Apex class deployed.")
-								self._on_result({
-									action = existing_id and "update" or "create",
-									id = existing_id or member.id,
-									result = status,
-								})
-							end)
-						end
-					end)
-				end
-				self._logger:tell_wip("Polling deployment status...")
-				poll()
-			end)
+	req:send(function(container) self:_run__container_created(container) end)
+end
+
+function Deploy:_run__container_created(container)
+	assert(container and container.id, "MetadataContainer creation failed")
+	self._container_id = container.id
+	-- 2) create ApexClassMember
+	local member_req = CurlReq:new()
+	member_req:use_auth_info(self._auth_info)
+	member_req:set_tooling_suburl("/sobjects/ApexClassMember")
+	member_req:set_method("POST")
+	local member_body = {
+		MetadataContainerId = self._container_id,
+		Body = self._class_body,
+		FullName = self._class_name,
+	}
+	if self._existing_id then member_body.ContentEntityId = self._existing_id end
+	member_req:set_json_data(vim.json.encode(member_body))
+	self._logger:tell_wip("Attaching Apex class to the deployment...")
+	member_req:send(function(member) self:_run__member_created(member) end)
+end
+
+function Deploy:_run__member_created(member)
+	assert(member and member.id, "ApexClassMember creation failed")
+	self._member_id = member.id
+	-- 3) submit ContainerAsyncRequest
+	local car_req = CurlReq:new()
+	car_req:use_auth_info(self._auth_info)
+	car_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest")
+	car_req:set_method("POST")
+	car_req:set_json_data(
+		vim.json.encode({ IsCheckOnly = false, MetadataContainerId = self._container_id })
+	)
+	self._logger:tell_wip("Submitting deployment...")
+	car_req:send(function(car) self:_run__car_created(car) end)
+end
+
+function Deploy:_run__car_created(car)
+	assert(car and car.id, "ContainerAsyncRequest creation failed")
+	self._car_id = car.id
+	self._logger:tell_wip("Polling deployment status...")
+	self:_run__poll()
+end
+
+function Deploy:_run__poll()
+	local status_req = CurlReq:new()
+	status_req:use_auth_info(self._auth_info)
+	status_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest/" .. self._car_id)
+	status_req:send(function(status) self:_run__handle_status(status) end)
+end
+
+function Deploy:_run__handle_status(status)
+	local state = status and status.State
+	if state == "Queued" or state == "InProgress" then
+		vim.defer_fn(function() self:_run__poll() end, CAR_POLL_DURATION_MS)
+		return
+	end
+	local function do_cleanup(cb)
+		local del = CurlReq:new()
+		del:use_auth_info(self._auth_info)
+		del:set_tooling_suburl("/sobjects/MetadataContainer/" .. self._container_id)
+		del:set_method("DELETE")
+		del:set_expect_json(false)
+		self._logger:tell_wip("Cleaning up deployment...")
+		del:send(cb)
+	end
+	if state == "Failed" then
+		do_cleanup(function() self._logger:tell_failed(status.ErrorMsg or "Deployment failed!") end)
+		return
+	end
+	if state == "Completed" then
+		do_cleanup(function()
+			self._logger:tell_finished("Apex class deployed.")
+			self._on_result({
+				action = self._existing_id and "update" or "create",
+				id = self._existing_id or self._member_id,
+				result = status,
+			})
 		end)
-	end)
+		return
+	end
 end
 
 function Deploy:run_on_this_buf_async()
