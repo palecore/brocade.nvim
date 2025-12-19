@@ -145,60 +145,69 @@ function Deploy:_run__post_or_put_class(resp)
 		self._existing_id = record.Id
 	end
 	assert(self._class_body ~= nil, "Class body must be set for deploy")
-	-- 1) create MetadataContainer
-	local req = CurlReq:new()
-	req:use_auth_info(self._auth_info)
-	req:set_tooling_suburl("/sobjects/MetadataContainer")
-	req:set_method("POST")
+	-- Use composite resource to create MetadataContainer, ApexClassMember and ContainerAsyncRequest in one call
+	local api_v = tostring(self._auth_info.get_api_version())
+	local base_service = "/services/data/v" .. api_v .. "/tooling"
 	-- NOTE: Metadata Container name can have at most 32 characters:
 	local container_name = self._class_name:sub(1, 32)
-	req:set_json_data(vim.json.encode({ Name = container_name }))
-	self._logger:tell_wip("Preparing deployment...")
-	req:send(function(container) self:_run__container_created(container) end)
-end
-
-function Deploy:_run__container_created(container)
-	assert(container and container.id, "MetadataContainer creation failed")
-	self._container_id = container.id
-	-- 2) create ApexClassMember
-	local member_req = CurlReq:new()
-	member_req:use_auth_info(self._auth_info)
-	member_req:set_tooling_suburl("/sobjects/ApexClassMember")
-	member_req:set_method("POST")
 	local member_body = {
-		MetadataContainerId = self._container_id,
+		MetadataContainerId = "@{metadatacontainer_reference_id.id}",
 		Body = self._class_body,
 		FullName = self._class_name,
 	}
 	if self._existing_id then member_body.ContentEntityId = self._existing_id end
-	member_req:set_json_data(vim.json.encode(member_body))
-	self._logger:tell_wip("Attaching Apex class to the deployment...")
-	member_req:send(function(member) self:_run__member_created(member) end)
-end
-
-function Deploy:_run__member_created(member)
-	assert(member and member.id, "ApexClassMember creation failed")
-	self._member_id = member.id
-	-- 3) submit ContainerAsyncRequest
-	local car_req = CurlReq:new()
-	car_req:use_auth_info(self._auth_info)
-	car_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest")
-	car_req:set_method("POST")
-	car_req:set_json_data(
-		vim.json.encode({ IsCheckOnly = false, MetadataContainerId = self._container_id })
-	)
+	local composite = {
+		allOrNone = false,
+		compositeRequest = {
+			{
+				method = "POST",
+				body = { Name = container_name },
+				url = base_service .. "/sobjects/MetadataContainer/",
+				referenceId = "metadatacontainer_reference_id",
+			},
+			{
+				method = "POST",
+				body = member_body,
+				url = base_service .. "/sobjects/ApexClassMember/",
+				referenceId = "apexclassmember_reference_id",
+			},
+			{
+				method = "POST",
+				body = { IsCheckOnly = false, MetadataContainerId = "@{metadatacontainer_reference_id.id}" },
+				url = base_service .. "/sobjects/ContainerAsyncRequest/",
+				referenceId = "containerasyncrequest_reference_id",
+			},
+		},
+	}
+	local req = CurlReq:new()
+	req:use_auth_info(self._auth_info)
+	req:set_tooling_suburl("/composite")
+	req:set_method("POST")
+	req:set_json_data(vim.json.encode(composite))
 	self._logger:tell_wip("Submitting deployment...")
-	car_req:send(function(car) self:_run__car_created(car) end)
+	req:send(function(composite_resp) self:_run__start_polling_car(composite_resp) end)
 end
 
-function Deploy:_run__car_created(car)
-	assert(car and car.id, "ContainerAsyncRequest creation failed")
-	self._car_id = car.id
+function Deploy:_run__start_polling_car(composite_resp)
+	assert(composite_resp and composite_resp.compositeResponse, "Composite response invalid")
+	-- parse compositeResponse entries to extract created ids
+	for _, entry in ipairs(composite_resp.compositeResponse) do
+		if entry.referenceId == "metadatacontainer_reference_id" then
+			if entry.body and entry.body.id then self._container_id = entry.body.id end
+		end
+		if entry.referenceId == "apexclassmember_reference_id" then
+			if entry.body and entry.body.id then self._member_id = entry.body.id end
+		end
+		if entry.referenceId == "containerasyncrequest_reference_id" then
+			if entry.body and entry.body.id then self._car_id = entry.body.id end
+		end
+	end
+	if not self._car_id then error("ContainerAsyncRequest ID missing in composite response") end
 	self._logger:tell_wip("Polling deployment status...")
-	self:_run__poll()
+	self:_run__poll_car()
 end
 
-function Deploy:_run__poll()
+function Deploy:_run__poll_car()
 	local status_req = CurlReq:new()
 	status_req:use_auth_info(self._auth_info)
 	status_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest/" .. self._car_id)
@@ -208,24 +217,17 @@ end
 function Deploy:_run__handle_status(status)
 	local state = status and status.State
 	if state == "Queued" or state == "InProgress" then
-		vim.defer_fn(function() self:_run__poll() end, CAR_POLL_DURATION_MS)
+		vim.defer_fn(function() self:_run__poll_car() end, CAR_POLL_DURATION_MS)
 		return
 	end
-	local function do_cleanup(cb)
-		local del = CurlReq:new()
-		del:use_auth_info(self._auth_info)
-		del:set_tooling_suburl("/sobjects/MetadataContainer/" .. self._container_id)
-		del:set_method("DELETE")
-		del:set_expect_json(false)
-		self._logger:tell_wip("Cleaning up deployment...")
-		del:send(cb)
-	end
 	if state == "Failed" then
-		do_cleanup(function() self._logger:tell_failed(status.ErrorMsg or "Deployment failed!") end)
+		self:_run__cleanup(
+			function() self._logger:tell_failed(status.ErrorMsg or "Deployment failed!") end
+		)
 		return
 	end
 	if state == "Completed" then
-		do_cleanup(function()
+		self:_run__cleanup(function()
 			self._logger:tell_finished("Apex class deployed.")
 			self._on_result({
 				action = self._existing_id and "update" or "create",
@@ -235,6 +237,16 @@ function Deploy:_run__handle_status(status)
 		end)
 		return
 	end
+end
+
+function Deploy:_run__cleanup(cb)
+	local del = CurlReq:new()
+	del:use_auth_info(self._auth_info)
+	del:set_tooling_suburl("/sobjects/MetadataContainer/" .. self._container_id)
+	del:set_method("DELETE")
+	del:set_expect_json(false)
+	self._logger:tell_wip("Cleaning up deployment...")
+	del:send(cb)
 end
 
 function Deploy:run_on_this_buf_async()
