@@ -95,4 +95,154 @@ function Get:load_this_buf_async()
 	end))
 end
 
+---@type number ContainerAsyncRequest status polling duration.
+local CAR_POLL_DURATION_MS = 250
+
+local Deploy = {
+	_logger = Logger:get_instance(),
+	_target_org = nil,
+	_auth_info = nil,
+	_class_name = nil,
+	_class_body = nil,
+}
+Deploy.__index = Deploy
+M.Deploy = Deploy
+
+function Deploy:new() return setmetatable({}, self) end
+function Deploy:set_target_org(target_org) self._target_org = target_org end
+function Deploy:set_class_name(name) self._class_name = name end
+function Deploy:set_class_body(body) self._class_body = body end
+
+function Deploy:run_async(cb)
+	self._on_result = cb or function() end
+	self._logger:tell_wip("Fetching auth info...")
+	local fetch_auth_info = FetchAuthInfo:new()
+	if self._target_org then fetch_auth_info:set_target_org(self._target_org) end
+	fetch_auth_info:run_async(function(auth_info) self:_run__query(auth_info) end)
+end
+
+function Deploy:_run__query(auth_info)
+	self._auth_info = assert(auth_info)
+	local req = CurlReq:new()
+	req:use_auth_info(auth_info)
+	req:set_tooling_suburl("/query")
+	assert(self._class_name, "Class name must be set")
+	local q = ("SELECT Id FROM ApexClass WHERE Name = '%s' LIMIT 1"):format(
+		sq_escape(self._class_name)
+	)
+	req:set_kv_data("q", q)
+	self._logger:tell_wip("Querying the Apex class...")
+	req:send(function(resp) self:_run__post_or_put_class(resp) end)
+end
+
+function Deploy:_run__post_or_put_class(resp)
+	assert(resp, "ApexClass query result invalid!")
+	assert(resp.done == true, "Query not finished!")
+	local exists = resp.size and resp.size >= 1
+	local existing_id = nil
+	if exists then
+		local record = resp.records[1]
+		existing_id = record.Id
+	end
+	assert(self._class_body ~= nil, "Class body must be set for deploy")
+	-- 1) create MetadataContainer
+	local req = CurlReq:new()
+	req:use_auth_info(self._auth_info)
+	req:set_tooling_suburl("/sobjects/MetadataContainer")
+	req:set_method("POST")
+	-- NOTE: Metadata Container name can have at most 32 characters:
+	local container_name = self._class_name:sub(1, 32)
+	req:set_json_data(vim.json.encode({ Name = container_name }))
+	self._logger:tell_wip("Creating MetadataContainer...")
+	req:send(function(container)
+		assert(container and container.id, "MetadataContainer creation failed")
+		local container_id = container.id
+		-- 2) create ApexClassMember
+		local member_req = CurlReq:new()
+		member_req:use_auth_info(self._auth_info)
+		member_req:set_tooling_suburl("/sobjects/ApexClassMember")
+		member_req:set_method("POST")
+		local member_body =
+			{ MetadataContainerId = container_id, Body = self._class_body, FullName = self._class_name }
+		if existing_id then member_body.ContentEntityId = existing_id end
+		member_req:set_json_data(vim.json.encode(member_body))
+		self._logger:tell_wip("Creating ApexClassMember...")
+		member_req:send(function(member)
+			assert(member and member.id, "ApexClassMember creation failed")
+			-- 3) submit ContainerAsyncRequest
+			local car_req = CurlReq:new()
+			car_req:use_auth_info(self._auth_info)
+			car_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest")
+			car_req:set_method("POST")
+			car_req:set_json_data(
+				vim.json.encode({ IsCheckOnly = false, MetadataContainerId = container_id })
+			)
+			self._logger:tell_wip("Submitting ContainerAsyncRequest...")
+			car_req:send(function(car)
+				assert(car and car.id, "ContainerAsyncRequest creation failed")
+				-- 4) poll for status
+				local function poll()
+					local status_req = CurlReq:new()
+					status_req:use_auth_info(self._auth_info)
+					status_req:set_tooling_suburl("/sobjects/ContainerAsyncRequest/" .. car.id)
+					status_req:send(function(status)
+						local state = status and status.State
+						if state == "Queued" or state == "InProgress" then
+							vim.defer_fn(poll, CAR_POLL_DURATION_MS)
+							return
+						end
+						-- cleanup container
+						local function cleanup(cb)
+							local del = CurlReq:new()
+							del:use_auth_info(self._auth_info)
+							del:set_tooling_suburl("/sobjects/MetadataContainer/" .. container_id)
+							del:set_method("DELETE")
+							del:set_expect_json(false)
+							self._logger:tell_wip("Cleaning up deployment...")
+							del:send(cb)
+						end
+						if state == "Failed" then
+							cleanup(
+								function() self._logger:tell_failed(status.ErrorMsg or "Deployment failed!") end
+							)
+						end
+						if state == "Completed" then
+							cleanup(function()
+								self._logger:tell_finished("Apex class deployed.")
+								self._on_result({
+									action = existing_id and "update" or "create",
+									id = existing_id or member.id,
+									result = status,
+								})
+							end)
+						end
+					end)
+				end
+				poll()
+			end)
+		end)
+	end)
+end
+
+function Deploy:run_on_this_buf_async()
+	local file_path = vim.api.nvim_buf_get_name(0)
+	if not file_path or file_path == "" then error("Buffer has no filename") end
+	-- must be a .cls file inside force-app/main/default/classes
+	local class_name = string.match(file_path, "([^/]+)%.cls$")
+	if not class_name or not string.find(file_path, "force%-app/main/default/classes/") then
+		error("Current buffer is not an Apex class in force-app/main/default/classes")
+	end
+	self:set_class_name(class_name)
+	local lines
+	if vim.fn.filereadable(file_path) == 1 then
+		lines = vim.fn.readfile(file_path)
+	else
+		lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
+	end
+	-- TODO respect fileformat and thus EOL characters
+	local body = table.concat(lines, "\n")
+	self:set_class_body(body)
+	self:run_async()
+end
+
 return M
