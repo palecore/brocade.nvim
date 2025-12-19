@@ -6,6 +6,7 @@ local Cmdline = require("brocade.cmdline")
 local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
 local RunAnonApex = require("brocade.run-anon-apex")
 local GetApexLogs = require("brocade.debug-logs").Get
+local ApexClass = require("brocade.apex-class")
 local TraceFlag = require("brocade.trace-flag")
 
 local M = {}
@@ -123,9 +124,9 @@ do
 		trace_flag_get_inputs[1].target_org = target_org
 	end)
 	local tfg_debug_level_opt = trace_flag_get_sub:add_option("--debug-level")
-	tfg_debug_level_opt:expect_value(function(lead, line, pos)
-		return { "SFDC_DevConsole", "ReplayDebuggerLevels" }
-	end)
+	tfg_debug_level_opt:expect_value(
+		function(lead, line, pos) return { "SFDC_DevConsole", "ReplayDebuggerLevels" } end
+	)
 	tfg_debug_level_opt:on_value(function(debug_level)
 		trace_flag_get_inputs[1] = trace_flag_get_inputs[1] or {}
 		trace_flag_get_inputs[1].debug_level = debug_level
