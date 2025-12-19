@@ -181,6 +181,25 @@ do
 		end
 		get:load_this_buf_async()
 	end)
+
+	-- APEX DEPLOY (this buffer)
+	local apex_deploy_sub = cmdline:add_subcommand({ "apex", "deploy" })
+	local apex_deploy_inputs = { { target_org = nil } }
+	-- option: target-org
+	local ad_target_org_opt = apex_deploy_sub:add_option("--target-org")
+	ad_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	ad_target_org_opt:on_value(function(target_org)
+		apex_deploy_inputs[1] = apex_deploy_inputs[1] or {}
+		apex_deploy_inputs[1].target_org = target_org
+	end)
+	-- entrypoint
+	apex_deploy_sub:on_parsed(function()
+		local deploy = ApexClass.Deploy:new()
+		if apex_deploy_inputs[1].target_org then
+			deploy:set_target_org(apex_deploy_inputs[1].target_org)
+		end
+		deploy:run_on_this_buf_async()
+	end)
 end
 
 ---@type fun(lead: string, line: string, pos: number): string[]
