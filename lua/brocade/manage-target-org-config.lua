@@ -4,10 +4,24 @@
 --
 local M = {}
 
-local function sf_config_path() return vim.fs.joinpath(".sf", "config.json") end
+
+---Gets path to the project-local SF CLI configuration or nil if none exists.
+---Traverses up the directory tree from the current working directory.
+---@return string?
+local function sf_config_path()
+	local sf_dotdir_path = vim.fs.root(vim.fn.getcwd(), ".sf/config.json")
+	-- We don't want to use the global one:
+	if sf_dotdir_path == vim.fs.joinpath(vim.env.HOME, ".sf") then
+		return nil
+	end
+	if not sf_dotdir_path then
+		return nil
+	end
+	return vim.fs.joinpath(sf_dotdir_path, "config.json")
+end
 
 local function read_project_config()
-	local sf_config_lines = vim.fn.readfile(sf_config_path())
+	local sf_config_lines = vim.fn.readfile(assert(sf_config_path()))
 	local sf_config_json = table.concat(sf_config_lines, "\n")
 	local sf_config = vim.json.decode(sf_config_json, { luanil = { array = true, object = true } })
 	--
@@ -22,7 +36,7 @@ local function change_project_config(new_target_org)
 	cfg["target-org"] = new_target_org
 	local cfg_json = vim.json.encode(cfg, {})
 
-	vim.fn.writefile({ cfg_json }, sf_config_path(), "bs")
+	vim.fn.writefile({ cfg_json }, assert(sf_config_path()), "bs")
 	return {
 		ok = true,
 	}
