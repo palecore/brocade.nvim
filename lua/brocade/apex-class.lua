@@ -317,10 +317,59 @@ function Deploy:_run__handle_status(status)
 		vim.defer_fn(function() self:_run__poll_car() end, CAR_POLL_DURATION_MS)
 		return
 	end
+
+	local function show_component_failures()
+		local failures = status and status.DeployDetails and status.DeployDetails.componentFailures
+		if not failures or type(failures) ~= "table" then return end
+		local class_name = self._class_name
+		if not class_name then return end
+		-- Find buffer for this class
+		local match_buf = nil
+		local match_file = nil
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_loaded(buf) then
+				local name = vim.api.nvim_buf_get_name(buf)
+				local fname = name:match("([^/]+)%.cls$")
+				if fname and fname == class_name then
+					match_buf = buf
+					match_file = name
+					break
+				end
+			end
+		end
+		if not match_buf then return end
+		local diagnostics = {}
+		for _, failure in ipairs(failures) do
+			local fileName = failure.fileName or ""
+			local fname = fileName:match("([^/]+)%.cls$")
+			if fname == class_name then
+				local lnum = (failure.lineNumber or 1) - 1
+				local col = (failure.columnNumber or 1) - 1
+				local msg = failure.problem or "Deployment error"
+				table.insert(diagnostics, {
+					lnum = lnum,
+					col = col,
+					message = msg,
+					severity = vim.diagnostic.severity.ERROR,
+				})
+			end
+		end
+		if #diagnostics > 0 then
+			local ns = vim.api.nvim_create_namespace("brocade-apex-deploy")
+			vim.diagnostic.set(ns, match_buf, diagnostics)
+			vim.api.nvim_create_autocmd({ "BufRead", "BufWrite" }, {
+				buffer = match_buf,
+				once = true,
+				callback = function() vim.diagnostic.reset(ns, match_buf) end,
+			})
+		end
+	end
+
 	if state == "Failed" then
-		self:_run__cleanup(
-			function() self._logger:tell_failed(status.ErrorMsg or "Deployment failed!") end
-		)
+		self:_run__cleanup(vim.schedule_wrap(function()
+			show_component_failures()
+			self._logger:tell_failed(status.ErrorMsg or "Deployment failed!")
+		end))
 		return
 	end
 	if state == "Completed" then
