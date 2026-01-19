@@ -43,6 +43,7 @@ function Logger:tell_failed(msg)
 		self._progress_handle = self._progress_handle or make_progress_handle(msg)
 		self._progress_handle.message = msg
 		self._progress_handle:cancel()
+		vim.notify(msg, vim.log.levels.ERROR)
 	end)
 end
 
