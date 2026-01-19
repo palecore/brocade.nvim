@@ -202,9 +202,106 @@ function Deploy:_run__start_polling_car(composite_resp)
 			if entry.body and entry.body.id then self._car_id = entry.body.id end
 		end
 	end
-	if not self._car_id then error("ContainerAsyncRequest ID missing in composite response") end
+	if not self._car_id then
+		local errors = {}
+		for _, entry in ipairs(composite_resp.compositeResponse) do
+			if type(entry.body) == "table" then
+				for _, err in ipairs(entry.body) do
+					if err and err.message then
+						table.insert(errors, (err.errorCode or "") .. ": " .. err.message)
+					end
+				end
+			end
+		end
+		if #errors > 0 then
+			self._logger:tell_failed("There were compilation failures: " .. table.concat(errors, "\n"))
+		end
+		local container_name = self._class_name and self._class_name:sub(1, 32) or nil
+		if container_name then
+			self:_cleanup_metadata_container_and_retry(container_name)
+		else
+			self._logger:tell_failed(
+				"Deployment aborted: ContainerAsyncRequest could not be created and container name is unknown!"
+			)
+		end
+		return
+	end
 	self._logger:tell_wip("Polling deployment status...")
 	self:_run__poll_car()
+end
+
+-- Internal: Clean up MetadataContainer by name and retry deployment
+function Deploy:_cleanup_metadata_container_and_retry(container_name)
+	local api_v = tostring(self._auth_info.get_api_version())
+	local base_service = "/services/data/v" .. api_v .. "/tooling"
+	local q = ("SELECT Id FROM MetadataContainer WHERE Name = '%s' LIMIT 1"):format(
+		sq_escape(container_name)
+	)
+	local composite = {
+		allOrNone = false,
+		compositeRequest = {
+			{
+				method = "GET",
+				url = base_service .. "/query/?q=" .. q,
+				referenceId = "query_metadatacontainer_reference_id",
+			},
+		},
+	}
+	local req = CurlReq:new()
+	req:use_auth_info(self._auth_info)
+	req:set_tooling_suburl("/composite")
+	req:set_method("POST")
+	req:set_json_data(vim.json.encode(composite))
+	self._logger:tell_wip("Querying for existing MetadataContainer to clean up...")
+	req:send(
+		function(resp) self:_handle_metadata_container_query_and_delete(resp, container_name) end
+	)
+end
+
+function Deploy:_handle_metadata_container_query_and_delete(resp, container_name)
+	if not resp or not resp.compositeResponse then
+		self._logger:tell_failed("Failed to query for MetadataContainer during cleanup!")
+		return
+	end
+	local query_entry = nil
+	for _, entry in ipairs(resp.compositeResponse) do
+		if entry.referenceId == "query_metadatacontainer_reference_id" then
+			query_entry = entry
+			break
+		end
+	end
+	if
+		not query_entry
+		or not query_entry.body
+		or not query_entry.body.records
+		or #query_entry.body.records == 0
+	then
+		self._logger:tell_failed("No MetadataContainer found to clean up for name: " .. container_name)
+		return
+	end
+	local container_id = query_entry.body.records[1].Id
+	if not container_id then
+		self._logger:tell_failed("MetadataContainer ID missing in query result!")
+		return
+	end
+	local del = CurlReq:new()
+	del:use_auth_info(self._auth_info)
+	del:set_tooling_suburl("/sobjects/MetadataContainer/" .. container_id)
+	del:set_method("DELETE")
+	del:set_expect_json(false)
+	self._logger:tell_wip("Deleting MetadataContainer " .. container_id .. "...")
+	del:send(function(delete_resp)
+		if delete_resp == nil or delete_resp == "" then
+			self._logger:tell_finished("MetadataContainer cleaned up. Retrying deployment...")
+			self:_run__post_or_put_class({
+				done = true,
+				size = self._existing_id and 1 or 0,
+				records = self._existing_id and { { Id = self._existing_id } } or {},
+			})
+		else
+			self._logger:tell_failed("Failed to delete MetadataContainer: " .. tostring(delete_resp))
+		end
+	end)
 end
 
 function Deploy:_run__poll_car()
