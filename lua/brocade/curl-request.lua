@@ -1,5 +1,17 @@
 local M = {}
 
+-- IMPORTS
+local a = require("plenary.async")
+
+-- helper to call Vimscript functions asynchronously:
+local a_fn = setmetatable({}, {
+	__index = function(_, k)
+		return function(...) return a.api.nvim_call_function(k, { ... }) end
+	end,
+})
+
+-- IMPLEMENTATION
+
 local CurlRequest = {}
 CurlRequest.__index = CurlRequest
 
@@ -36,6 +48,11 @@ function CurlRequest:use_auth_info(auth_info)
 	self:set_access_token(auth_info.get_access_token())
 	self:set_api_version(auth_info.get_api_version())
 	self:set_instance_url(auth_info.get_instance_url())
+end
+
+---@async
+function CurlRequest:send_async()
+	return a.wrap(function(cb) self:send(cb) end, 1)()
 end
 
 function CurlRequest:send(cb)
