@@ -3,7 +3,7 @@
 
 A neovim plugin to aid development of Salesforce DX projects.
 
-_This plugin is in a very early stage of development!_
+_This plugin is in a very early stage of development! Use at your own risk!_
 
 ## Requirements
 
