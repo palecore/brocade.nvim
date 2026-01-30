@@ -8,6 +8,7 @@ _This plugin is in a very early stage of development! Use at your own risk!_
 ## Requirements
 
 * `curl` - used to make Salesforce REST API calls
+* `plenary.nvim` - utility functions
 * `sf` CLI utility & its project/user config files/dirs - used to obtain access
   token to the Orgs
 
@@ -18,6 +19,7 @@ _This plugin is in a very early stage of development! Use at your own risk!_
 ```lua
 {
     "palecore/brocade.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
     opts = {},
 }
 ```
