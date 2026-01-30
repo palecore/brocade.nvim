@@ -1,5 +1,10 @@
 local M = {}
 
+-- IMPORTS
+local a = require("plenary.async")
+
+-- IMPLEMENTATION
+
 local function sf_config_path()
 	local sfdx_project_dir = vim.fs.root(".", { ".sf" })
 	assert(sfdx_project_dir, "Couldn't find SFDX project root directory!")
@@ -74,6 +79,13 @@ local function fetch_auth_info(target_org, callback)
 	end)
 end
 
+---@async
+---@param target_org string
+---@return brocade.org-session.AuthInfo
+local function fetch_auth_info_async(target_org)
+	return a.wrap(function(cb) fetch_auth_info(target_org, cb) end, 1)()
+end
+
 local FetchAuthInfo = {
 	_target_org = nil,
 }
@@ -84,10 +96,22 @@ function FetchAuthInfo:new() return setmetatable({}, self) end
 
 function FetchAuthInfo:set_target_org(target_org) self._target_org = target_org end
 
----@param cb? fun(auth_info: brocade.org-session.AuthInfo)
+---@async If `cb` is not provided.
+---@param cb? fun(auth_info: brocade.org-session.AuthInfo) Deprecated. If not provided, this is run in plenary async context.
+---@return brocade.org-session.AuthInfo
 function FetchAuthInfo:run_async(cb)
-	cb = cb or function() end
-	fetch_auth_info(self._target_org, cb)
+	-- handle legacy callback-style invocation:
+	if not coroutine.running() then
+		cb = cb or function() end
+		-- we can ignore type mismatch here, as in this callback-style branch we're
+		-- returning via callback, not directly, so return type is effectively void.
+		---@diagnostic disable-next-line: return-type-mismatch
+		return a.run(function() return self:run_async() end, cb)
+	end
+	-- the rest runs in plenary async context:
+	local out = fetch_auth_info_async(self._target_org)
+	if cb then cb(out) end
+	return out
 end
 
 return M
