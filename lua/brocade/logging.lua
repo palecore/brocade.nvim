@@ -53,6 +53,7 @@ function Logger:tell_finished(msg)
 		self._progress_handle.message = msg
 		self._progress_handle:finish()
 		self._progress_handle = nil
+		vim.notify(msg, vim.log.levels.INFO)
 	end)
 end
 
