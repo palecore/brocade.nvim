@@ -2,11 +2,14 @@
 --
 -- Universal "facade" user command
 
+local a = require("plenary.async")
+
 local Cmdline = require("brocade.cmdline")
 local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
 local RunAnonApex = require("brocade.run-anon-apex")
 local GetApexLogs = require("brocade.debug-logs").Get
 local ApexClass = require("brocade.apex-class")
+local TestApex = require("brocade.test-apex")
 local TraceFlag = require("brocade.trace-flag")
 
 local M = {}
@@ -199,6 +202,26 @@ do
 			deploy:set_target_org(apex_deploy_inputs[1].target_org)
 		end
 		deploy:run_on_this_buf_async()
+	end)
+
+	-- APEX TEST THIS
+	local apex_test_sub = cmdline:add_subcommand({ "apex", "test", "this" })
+	local apex_test_inputs = { { target_org = nil } }
+	-- option: target-org
+	local at_target_org_opt = apex_test_sub:add_option("--target-org")
+	at_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	at_target_org_opt:on_value(function(target_org)
+		apex_test_inputs[1] = apex_test_inputs[1] or {}
+		apex_test_inputs[1].target_org = target_org
+	end)
+	-- entrypoint
+	apex_test_sub:on_parsed(function()
+		local run_tests = TestApex.Run:new()
+		if apex_test_inputs[1].target_org then
+			run_tests:set_target_org(apex_test_inputs[1].target_org)
+		end
+
+		a.void(function() run_tests:run_on_this_buf_async() end)()
 	end)
 end
 
