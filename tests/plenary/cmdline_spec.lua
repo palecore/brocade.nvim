@@ -1,6 +1,6 @@
 local Cmdline = require("brocade.cmdline")
 
-describe("Cmdline:complete", function()
+describe("Cmdline", function()
 	it("completes subcommands when no args", function()
 		local c = Cmdline:new()
 		c:add_subcommand({ "foo" })
