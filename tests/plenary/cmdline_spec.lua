@@ -69,4 +69,23 @@ describe("Cmdline", function()
 		local opts = c:complete("", "cmd sub ", 7)
 		assert.are.same({ "--long", "P1" }, opts)
 	end)
+
+	it("parses flags and calls on_present callback", function()
+		local c = Cmdline:new()
+		local sc = c:add_subcommand({ "flaggy" })
+		local flag_called = false
+		sc:add_flag("--dry-run"):on_present(function() flag_called = true end)
+		c:parse("flaggy --dry-run")
+		assert.is_true(flag_called)
+	end)
+
+	it("suggests flag in completion after subcommand", function()
+		local c = Cmdline:new()
+		local sc = c:add_subcommand({ "flaggy" })
+		sc:add_flag("--dry-run")
+		local opts = c:complete("", "cmd flaggy ", 11)
+		table.sort(opts)
+		assert.are.same({ "--dry-run" }, opts)
+	end)
+
 end)
