@@ -9,6 +9,7 @@ local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
 local RunAnonApex = require("brocade.run-anon-apex")
 local GetApexLogs = require("brocade.debug-logs").Get
 local ApexClass = require("brocade.apex-class")
+local MetadataApi = require("brocade.metadata-api")
 local TestApex = require("brocade.test-apex")
 local TraceFlag = require("brocade.trace-flag")
 
@@ -222,6 +223,33 @@ do
 		end
 
 		a.void(function() run_tests:run_on_this_buf_async() end)()
+	end)
+
+	-- METADATA DEPLOY (this buffer)
+	local metadata_deploy_sub = cmdline:add_subcommand({ "metadata", "deploy" })
+	local metadata_deploy_inputs = { { target_org = nil, check_only = false } }
+	-- option: target-org
+	local md_target_org_opt = metadata_deploy_sub:add_option("--target-org")
+	md_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	md_target_org_opt:on_value(function(target_org)
+		metadata_deploy_inputs[1] = metadata_deploy_inputs[1] or {}
+		metadata_deploy_inputs[1].target_org = target_org
+	end)
+	-- option: dry-run
+	local md_check_only_opt = metadata_deploy_sub:add_flag("--dry-run")
+	md_check_only_opt:on_present(function()
+		metadata_deploy_inputs[1] = metadata_deploy_inputs[1] or {}
+		metadata_deploy_inputs[1].check_only = true
+	end)
+	-- entrypoint
+	metadata_deploy_sub:on_parsed(function()
+		local deploy = MetadataApi.Deploy:new()
+		if metadata_deploy_inputs[1].target_org then
+			deploy:set_target_org(metadata_deploy_inputs[1].target_org)
+		end
+		if metadata_deploy_inputs[1].check_only then deploy:set_check_only(true) end
+		metadata_deploy_inputs[1] = { target_org = nil, check_only = false } -- reset
+		a.void(function() deploy:run_on_this_buf_async() end)()
 	end)
 end
 
