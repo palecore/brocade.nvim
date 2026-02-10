@@ -28,6 +28,16 @@ local Option = {
 }
 Option.__index = Option
 
+---@class brocade.cmdline.Flag
+local Flag = {
+	---@type string
+	_key = "",
+	---@type fun()
+	_on_present_fn = function() end,
+}
+Flag.__index = Flag
+
+
 ---@class brocade.cmdline.PosArg
 local PosArg = {
 	---@type fun(lead: string, line: string, pos: number): string[]
@@ -105,6 +115,7 @@ end
 ---@param subcommands string[][]
 ---@return string[] options
 local function complete_subcmd(args, subcommands)
+
 	local idxs, matched_subcmds = partially_matches_any_subcmds(args, subcommands)
 	-- if at least one match - complete only for those matched:
 	if #idxs > 0 then
@@ -186,10 +197,17 @@ function Cmdline:complete(lead, line, pos)
 		if is_matching then
 			local opts_keys = {}
 			for _, opt in ipairs(subcmd._options) do
-				opts_keys[#opts_keys + 1] = opt._key
+				table.insert(opts_keys, opt._key)
 				if tokens[#tokens] == opt._key then return opt._complete_fn(lead, line, pos) end
 			end
-			-- if there are positional args, include their completions alongside option keys
+			-- collect flag keys
+			local flag_keys = {}
+			if subcmd._flags then
+				for _, flag in ipairs(subcmd._flags) do
+					table.insert(flag_keys, flag._key)
+				end
+			end
+			-- if there are positional args, include their completions alongside option and flag keys
 			if #subcmd._pos_args > 0 then
 				local any_pos = nil
 				for _, arg in ipairs(subcmd._pos_args) do
@@ -205,16 +223,18 @@ function Cmdline:complete(lead, line, pos)
 					pos_completions = subcmd._pos_args[1]._complete_fn(lead, line, pos)
 				end
 				local results = {}
-				for _, v in ipairs(opts_keys) do
-					table.insert(results, v)
-				end
-				for _, v in ipairs(pos_completions) do
-					table.insert(results, v)
-				end
+				for _, v in ipairs(opts_keys) do table.insert(results, v) end
+				for _, v in ipairs(flag_keys) do table.insert(results, v) end
+				for _, v in ipairs(pos_completions) do table.insert(results, v) end
 				table.sort(results)
 				return results
 			end
-			return opts_keys
+			-- if no positional args, just return options and flags
+			local results = {}
+			for _, v in ipairs(opts_keys) do table.insert(results, v) end
+			for _, v in ipairs(flag_keys) do table.insert(results, v) end
+			table.sort(results)
+			return results
 		end
 	end
 	return complete_subcmd(tokens, subcommands_tokens)
@@ -225,6 +245,7 @@ function Cmdline:parse(cmdline)
 	for _, subcmd in ipairs(self._subcommands) do
 		local is_matching, new_fargs = matches_subcommand(fargs, subcmd._tokens)
 		if is_matching and new_fargs then
+			-- handle options with values
 			if #new_fargs > 1 then
 				for _, option in ipairs(subcmd._options) do
 					if new_fargs[1] == option._key then
@@ -233,6 +254,23 @@ function Cmdline:parse(cmdline)
 						table.remove(new_fargs, 1)
 					end
 					if #new_fargs < 2 then break end
+				end
+			end
+			-- handle flags (no value, just presence)
+			if subcmd._flags then
+				local to_remove = {}
+				for i, flag in ipairs(subcmd._flags) do
+					for j, arg in ipairs(new_fargs) do
+						if arg == flag._key then
+							flag._on_present_fn()
+							table.insert(to_remove, j)
+						end
+					end
+				end
+				-- Remove flag args from new_fargs (in reverse order)
+				table.sort(to_remove, function(a, b) return a > b end)
+				for _, idx in ipairs(to_remove) do
+					table.remove(new_fargs, idx)
 				end
 			end
 			-- handle positional args: first non-any positional (if present), then any-positional for remaining args
@@ -270,14 +308,17 @@ function Cmdline:parse(cmdline)
 	end
 end
 
+
 ---@param tokens string[]
 function Subcmd:new(tokens)
 	local out = setmetatable({}, self)
 	out._options = {}
+	out._flags = {}
 	out._pos_args = {}
 	out._tokens = tokens
 	return out
 end
+
 
 ---@param fn fun()
 function Subcmd:on_parsed(fn) self._on_parsed_fn = fn end
@@ -305,6 +346,16 @@ function Subcmd:add_option(key)
 end
 
 ---@param key string
+---@return brocade.cmdline.Flag
+function Subcmd:add_flag(key)
+	if not self._flags then self._flags = {} end
+	local flag = Flag:new(key)
+	table.insert(self._flags, flag)
+	return flag
+end
+
+
+---@param key string
 ---@return brocade.cmdline.Option
 function Option:new(key)
 	local out = setmetatable({}, self)
@@ -312,10 +363,25 @@ function Option:new(key)
 	return out
 end
 
+---@param key string
+---@return brocade.cmdline.Flag
+function Flag:new(key)
+	local out = setmetatable({}, self)
+	out._key = key
+	return out
+end
+
+
 ---@param complete_fn? fun(lead: string, line: string, pos: number): string[]
 function Option:expect_value(complete_fn)
 	if complete_fn then self._complete_fn = complete_fn end
 end
+
+---@param on_present_fn fun()
+function Flag:on_present(on_present_fn)
+	self._on_present_fn = on_present_fn
+end
+
 
 ---@param on_value_fn fun(value: string)
 function Option:on_value(on_value_fn) self._on_value_fn = on_value_fn end
