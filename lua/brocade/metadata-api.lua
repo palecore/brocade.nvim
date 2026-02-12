@@ -22,23 +22,6 @@ local a_fn = setmetatable({}, {
 ---@type number Metadata deployment status polling duration.
 local DEPLOY_POLL_DURATION_MS = 500
 
--- Metadata type configuration: maps metadata type names to their directory and file patterns
-local METADATA_TYPE_CONFIG = {
-	ApexClass = { dir = "classes", extension = "cls", has_meta = true },
-	ApexTrigger = { dir = "triggers", extension = "trigger", has_meta = true },
-	ApexPage = { dir = "pages", extension = "page", has_meta = true },
-	ApexComponent = { dir = "components", extension = "component", has_meta = true },
-	LightningComponentBundle = { dir = "lwc", extension = nil, is_bundle = true },
-	AuraDefinitionBundle = { dir = "aura", extension = nil, is_bundle = true },
-	CustomObject = { dir = "objects", extension = "object-meta.xml", has_meta = false },
-	CustomField = { dir = "objects", extension = "field-meta.xml", has_meta = false },
-	Layout = { dir = "layouts", extension = "layout-meta.xml", has_meta = false },
-	PermissionSet = { dir = "permissionsets", extension = "permissionset-meta.xml", has_meta = false },
-	Profile = { dir = "profiles", extension = "profile-meta.xml", has_meta = false },
-	Flow = { dir = "flows", extension = "flow-meta.xml", has_meta = false },
-	StaticResource = { dir = "staticresources", extension = "resource", has_meta = true },
-}
-
 ---Generate package.xml content for given metadata components
 ---@param metadata_type string The metadata type (e.g. "ApexClass")
 ---@param members table List of member names
@@ -81,88 +64,129 @@ local function get_project_root()
 	return vim.fs.root(0, markers)
 end
 
----Parse a file path to extract metadata type and component name
----@param file_path string Full path to the metadata file
----@return string? metadata_type
----@return string? component_name
----@return table? files List of files to include (for bundles)
-local function parse_metadata_component(file_path)
-	local project_root = get_project_root()
-	if not project_root then return nil, nil, nil end
+---Extract metadata type from XML meta file by reading the root element tag
+---@param meta_file_path string Full path to the -meta.xml file
+---@return string? metadata_type The metadata type extracted from XML root element
+local function _extract_metadata_type_from_xml(meta_file_path)
+	if a_fn.filereadable(meta_file_path) ~= 1 then
+		return nil
+	end
 
-	-- Normalize path relative to force-app/main/default
-	local rel_path = file_path:gsub("^" .. vim.pesc(project_root) .. "/", "")
-	local force_app_pattern = "force%-app/main/default/([^/]+)/(.+)$"
-	local dir_type, rest = rel_path:match(force_app_pattern)
+	-- Read first few lines to find the root XML element
+	local lines = a_fn.readfile(meta_file_path, "", 10)
+	if not lines or #lines == 0 then
+		return nil
+	end
 
-	if not dir_type then return nil, nil, nil end
-
-	-- Find matching metadata type
-	for md_type, config in pairs(METADATA_TYPE_CONFIG) do
-		if config.dir == dir_type then
-			if config.is_bundle then
-				-- Bundle types (LWC, Aura) - include entire directory
-				local bundle_name = rest:match("^([^/]+)")
-				if bundle_name then
-					local bundle_dir =
-						vim.fs.joinpath(project_root, "force-app/main/default", dir_type, bundle_name)
-					local files = {}
-					-- Collect all files in bundle
-					for name, type in vim.fs.dir(bundle_dir) do
-						if type == "file" then
-							table.insert(files, vim.fs.joinpath(dir_type, bundle_name, name))
-						end
-					end
-					return md_type, bundle_name, files
-				end
-			else
-				-- Single file types
-				local file_name = vim.fs.basename(rest)
-				local component_name
-
-				if config.has_meta then
-					if vim.endswith(file_name, "-meta.xml") then
-						-- If we're on a meta file, extract the base name
-						component_name = file_name:sub(1, -(#"-meta.xml" + 1))
-					elseif vim.endswith(file_name, config.extension) then
-						-- Otherwise, extract the component name from the main file
-						component_name = file_name:sub(1, -(#("." .. config.extension) + 1))
-					end
-				else
-					-- Types where the file IS the meta file (e.g., CustomField)
-					if vim.endswith(file_name, config.extension) then
-						component_name = file_name:sub(1, -(#("." .. config.extension) + 1))
-					end
-				end
-
-				if component_name then
-					local files = {}
-					table.insert(files, vim.fs.joinpath(dir_type, file_name))
-
-					-- Add meta file if it exists separately
-					if config.has_meta then
-						local base_file = vim.fs.joinpath(
-							project_root,
-							"force-app/main/default",
-							dir_type,
-							component_name .. "." .. config.extension
-						)
-						local meta_file_path = base_file .. "-meta.xml"
-						if a_fn.filereadable(meta_file_path) == 1 then
-							table.insert(
-								files,
-								vim.fs.joinpath(dir_type, component_name .. "." .. config.extension .. "-meta.xml")
-							)
-						end
-					end
-
-					return md_type, component_name, files
-				end
+	-- Skip XML declaration and find the first opening tag
+	for i = 1, #lines do
+		local line = lines[i]
+		-- Skip XML declarations and comments
+		if not line:match("^%s*<%?xml") and not line:match("^%s*<!%-%-") then
+			-- Look for opening tag: <TagName or <TagName>
+			local tag_name = line:match("^%s*<([%w_]+)")
+			if tag_name then
+				return tag_name
 			end
 		end
 	end
 
-	return nil, nil, nil
+	return nil
+end
+
+---Parse a file path to extract metadata type and component name
+---@param file_path string Full path to the metadata file
+---@return string? metadata_type
+---@return string? component_name
+---@return table? files List of files to include (relative to force-app/main/default)
+local function parse_metadata_component(file_path)
+	local project_root = get_project_root()
+	if not project_root then
+		return nil, nil, nil
+	end
+
+	-- Normalize path relative to force-app/main/default
+	-- TODO returns objects/ for a field (should be objects/*/fields/)
+	local rel_path = file_path:gsub("^" .. vim.pesc(project_root) .. "/", "")
+	local force_app_pattern = "force%-app/main/default/([^/]+)/(.+)$"
+	local dir_type, rest = rel_path:match(force_app_pattern)
+
+	if not dir_type then
+		return nil, nil, nil
+	end
+
+	local file_name = vim.fs.basename(file_path)
+	local meta_file_path
+	local payload_file_path
+	local component_name
+
+	-- Check if current file ends with -meta.xml
+	if vim.endswith(file_name, "-meta.xml") then
+		-- This IS the meta file
+		meta_file_path = file_path
+		-- Extract component name (remove -meta.xml suffix)
+		component_name = file_name:sub(1, -(#"-meta.xml" + 1))
+		
+		-- Check if there's a payload file (component_name without any extension)
+		-- Try to find a file with the same base name but different extension
+		local dir_path = vim.fs.dirname(file_path)
+		local base_name_pattern = "^" .. vim.pesc(component_name) .. "$"
+		
+		-- Check if payload exists by trying common pattern: removing everything after first dot
+		local base_without_ext = component_name:match("^([^%.]+)")
+		if base_without_ext then
+			local potential_payload = vim.fs.joinpath(dir_path, base_without_ext)
+			-- Look for files starting with base name
+			for name, type in vim.fs.dir(dir_path) do
+				if type == "file" and name ~= file_name then
+					-- Check if this file matches the base pattern (e.g., MyClass.cls for MyClass.cls-meta.xml)
+					if name == component_name then
+						payload_file_path = vim.fs.joinpath(dir_path, name)
+						break
+					end
+				end
+			end
+		end
+	else
+		-- This is NOT a meta file, check if there's a neighboring -meta.xml file
+		meta_file_path = file_path .. "-meta.xml"
+		
+		if a_fn.filereadable(meta_file_path) ~= 1 then
+			-- No meta file found
+			return nil, nil, nil
+		end
+		
+		-- This is the payload file
+		payload_file_path = file_path
+		-- Component name is the full filename
+		component_name = file_name
+	end
+
+	-- Extract metadata type from the meta XML file
+	local metadata_type = _extract_metadata_type_from_xml(meta_file_path)
+	if not metadata_type then
+		return nil, nil, nil
+	end
+
+	-- Build the list of files to include in deployment
+	local files = {}
+	
+	-- Always include the meta file
+	local meta_rel_path = vim.fs.joinpath(dir_type, vim.fs.basename(meta_file_path))
+	table.insert(files, meta_rel_path)
+	
+	-- Include payload file if it exists
+	if payload_file_path then
+		local payload_rel_path = vim.fs.joinpath(dir_type, vim.fs.basename(payload_file_path))
+		table.insert(files, payload_rel_path)
+	end
+
+	-- component name is the base name without extension:
+	if component_name:find("%.") then
+		component_name = component_name:match("^([^%.]+)")
+	end
+
+	return metadata_type, component_name, files
 end
 
 -- DEPLOY CLASS
