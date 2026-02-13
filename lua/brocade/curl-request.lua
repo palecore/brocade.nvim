@@ -37,7 +37,25 @@ function CurlRequest:set_access_token(at) self.access_token = at end
 function CurlRequest:set_suburl(su) self.suburl = su end
 function CurlRequest:set_tooling_suburl(tsu) self.tooling_suburl = tsu end
 function CurlRequest:set_json_data(jd) self.json_data = jd end
-function CurlRequest:set_expect_json(is_expecting_json) self.is_expecting_json = is_expecting_json end
+
+---@deprecated use `with_expecting_json_response` or `with_expecting_xml_response` instead
+function CurlRequest:set_expect_json(is_expecting_json)
+	self.is_expecting_json = is_expecting_json
+	if is_expecting_json then self.is_expecting_xml = false end
+end
+
+function CurlRequest:with_expecting_json_response()
+	self.is_expecting_json = true
+	self.is_expecting_xml = false
+	return self
+end
+
+function CurlRequest:with_expecting_xml_response()
+	self.is_expecting_json = false
+	self.is_expecting_xml = true
+	return self
+end
+
 function CurlRequest:set_kv_data(k, v)
 	self.data_key = k
 	self.data_value = v
@@ -82,6 +100,9 @@ function CurlRequest:send(cb)
 	if self.is_expecting_json then
 		table.insert(call_cmd, "-H")
 		table.insert(call_cmd, "Accept: application/json")
+	elseif self.is_expecting_xml then
+		table.insert(call_cmd, "-H")
+		table.insert(call_cmd, "Accept: application/xml")
 	end
 	local call_stdin = nil
 	if method == "GET" then
