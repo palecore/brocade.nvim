@@ -8,7 +8,6 @@ local Cmdline = require("brocade.cmdline")
 local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
 local RunAnonApex = require("brocade.run-anon-apex")
 local GetApexLogs = require("brocade.debug-logs").Get
-local ApexClass = require("brocade.apex-class")
 local MetadataApi = require("brocade.metadata-api")
 local TestApex = require("brocade.test-apex")
 local ToolingRetrieve = require("brocade.tooling-retrieve")
@@ -166,25 +165,6 @@ do
 		if debug_logs_inputs[1].target_org then get:set_target_org(debug_logs_inputs[1].target_org) end
 		if debug_logs_inputs[1].limit then get:set_limit(debug_logs_inputs[1].limit) end
 		vim.schedule(function() get:present_async() end)
-	end)
-
-	-- APEX DEPLOY (this buffer)
-	local apex_deploy_sub = cmdline:add_subcommand({ "apex", "deploy" })
-	local apex_deploy_inputs = { { target_org = nil } }
-	-- option: target-org
-	local ad_target_org_opt = apex_deploy_sub:add_option("--target-org")
-	ad_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
-	ad_target_org_opt:on_value(function(target_org)
-		apex_deploy_inputs[1] = apex_deploy_inputs[1] or {}
-		apex_deploy_inputs[1].target_org = target_org
-	end)
-	-- entrypoint
-	apex_deploy_sub:on_parsed(function()
-		local deploy = ApexClass.Deploy:new()
-		if apex_deploy_inputs[1].target_org then
-			deploy:set_target_org(apex_deploy_inputs[1].target_org)
-		end
-		deploy:run_on_this_buf_async()
 	end)
 
 	-- APEX TEST THIS
