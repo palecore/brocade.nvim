@@ -6,6 +6,7 @@ local a = require("plenary.async")
 local CurlReq = require("brocade.curl-request").CurlRequest
 local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
 local Logger = require("brocade.logging").Logger
+local ApexClass = require("brocade.apex-class")
 
 -- helper to call Vimscript functions asynchronously:
 local a_fn = setmetatable({}, {
@@ -212,6 +213,12 @@ function Retrieve:run_on_this_buf_async()
 	local metadata_type, component_name, _ = parse_metadata_component(file_path)
 	if not metadata_type then
 		error("Current buffer is not a recognized Salesforce metadata component")
+	-- for Apex Classes let's use a tailored module:
+	elseif metadata_type == "ApexClass" then
+		local get_apex_class = ApexClass.Get:new()
+		if self._target_org then get_apex_class:set_target_org(self._target_org) end
+		get_apex_class:set_class_name(component_name)
+		return get_apex_class:load_this_buf_async()
 	end
 
 	self:set_component(metadata_type, assert(component_name, "Component name is null!"))
