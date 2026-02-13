@@ -224,8 +224,8 @@ do
 		a.void(function() retrieve:run_on_this_buf_async() end)()
 	end)
 
-	-- METADATA DEPLOY (this buffer)
-	local metadata_deploy_sub = cmdline:add_subcommand({ "metadata", "deploy" })
+	-- (METADATA) DEPLOY (this buffer)
+	local metadata_deploy_sub = cmdline:add_subcommand({ "deploy" })
 	local metadata_deploy_inputs = { { target_org = nil, check_only = false } }
 	-- option: target-org
 	local md_target_org_opt = metadata_deploy_sub:add_option("--target-org")
