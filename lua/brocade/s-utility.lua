@@ -11,6 +11,7 @@ local GetApexLogs = require("brocade.debug-logs").Get
 local ApexClass = require("brocade.apex-class")
 local MetadataApi = require("brocade.metadata-api")
 local TestApex = require("brocade.test-apex")
+local ToolingRetrieve = require("brocade.tooling-retrieve")
 local TraceFlag = require("brocade.trace-flag")
 
 local M = {}
@@ -223,6 +224,23 @@ do
 		end
 
 		a.void(function() run_tests:run_on_this_buf_async() end)()
+	end)
+
+	-- RETRIEVE (this buffer)
+	local retrieve_sub = cmdline:add_subcommand({ "retrieve" })
+	local retrieve_inputs = { { target_org = nil } }
+	-- option: target-org
+	local r_target_org_opt = retrieve_sub:add_option("--target-org")
+	r_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	r_target_org_opt:on_value(function(target_org)
+		retrieve_inputs[1] = retrieve_inputs[1] or {}
+		retrieve_inputs[1].target_org = target_org
+	end)
+	-- entrypoint
+	retrieve_sub:on_parsed(function()
+		local retrieve = ToolingRetrieve.Retrieve:new()
+		if retrieve_inputs[1].target_org then retrieve:set_target_org(retrieve_inputs[1].target_org) end
+		a.void(function() retrieve:run_on_this_buf_async() end)()
 	end)
 
 	-- METADATA DEPLOY (this buffer)
