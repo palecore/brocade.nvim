@@ -21,6 +21,9 @@ function M.setup(opts)
 	-- key mappings:
 	-- quickly open the "S" facade command:
 	vim.keymap.set("n", "<leader>s", ":S<space>", {})
+
+	-- register brocade initialization for SFDX projects:
+	require("brocade.initialize").ProjectInit:new():setup()
 end
 
 return M
