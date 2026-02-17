@@ -167,8 +167,8 @@ do
 		vim.schedule(function() get:present_async() end)
 	end)
 
-	-- APEX TEST THIS
-	local apex_test_sub = cmdline:add_subcommand({ "apex", "test", "this" })
+	-- (APEX) TEST (THIS)
+	local apex_test_sub = cmdline:add_subcommand({ "test" })
 	local apex_test_inputs = { { target_org = nil } }
 	-- option: target-org
 	local at_target_org_opt = apex_test_sub:add_option("--target-org")
