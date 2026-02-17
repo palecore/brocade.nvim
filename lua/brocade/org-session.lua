@@ -5,10 +5,56 @@ local a = require("plenary.async")
 
 -- IMPLEMENTATION
 
+--- Check if the given path is a git-worktree
+---@param dir string A path to check
+---@return boolean is_a_git_worktree True if the directory is a git-worktree
+local function is_git_worktree(dir)
+	local git_dir = vim.fs.joinpath(dir, ".git")
+	local stat = vim.uv.fs_stat(git_dir)
+	-- If .git is a file (not a directory), it's a worktree
+	return stat and stat.type ~= "directory"
+end
+
+--- Get the parent git project root when in a git-worktree
+---@param worktree_dir string The git-worktree directory
+---@return string? git_worktree_root The parent git project root, or nil if not found
+local function get_git_worktree_root(worktree_dir)
+	local git_file = vim.fs.joinpath(worktree_dir, ".git")
+	local git_lines = vim.fn.readfile(git_file)
+	if not git_lines or #git_lines == 0 then return nil end
+	-- Parse the .git file which contains: "gitdir: <path>"
+	local gitdir_line = git_lines[1]
+	if not vim.startswith(gitdir_line, "gitdir:") then return nil end
+	local gitdir_rel = gitdir_line:sub(#"gitdir:" + 1)
+	-- Convert to absolute path if necessary
+	local gitdir_abs
+	if gitdir_rel:sub(1, 1) == "/" then
+		gitdir_abs = gitdir_rel
+	else
+		gitdir_abs = vim.fs.joinpath(worktree_dir, gitdir_rel)
+	end
+	-- The parent git project root is the directory containing the .git/worktrees directory
+	-- Usually structured as: <git-common-dir>/worktrees/<worktree-name>
+	local parent_git_dir = vim.fs.dirname(vim.fs.dirname(gitdir_abs))
+	return parent_git_dir
+end
+
 local function sf_config_path()
-	local sfdx_project_dir = vim.fs.root(".", { ".sf" })
-	assert(sfdx_project_dir, "Couldn't find SFDX project root directory!")
-	return vim.fs.joinpath(sfdx_project_dir, ".sf", "config.json")
+	local cwd = vim.fn.getcwd()
+	-- First, try to find .sf directory in current project root
+	local sfdx_project_dir = vim.fs.root(cwd, { ".sf" })
+	if sfdx_project_dir then return vim.fs.joinpath(sfdx_project_dir, ".sf", "config.json") end
+	-- If not found, check if we're in a git-worktree
+	if is_git_worktree(cwd) then
+		local parent_git_root = get_git_worktree_root(cwd)
+		if parent_git_root then
+			-- Try to find .sf directory in parent git project
+			local parent_sfdx_dir = vim.fs.root(parent_git_root, { ".sf" })
+			if parent_sfdx_dir then return vim.fs.joinpath(parent_sfdx_dir, ".sf", "config.json") end
+		end
+	end
+
+	assert(false, "Couldn't find SFDX project root directory!")
 end
 
 local function read_project_config()
