@@ -73,24 +73,29 @@ end
 function Get:load_this_buf_async()
 	local file_path = vim.api.nvim_buf_get_name(0)
 	if not file_path or file_path == "" then error("Buffer has no filename") end
-	-- must be a .cls file inside force-app/main/default/classes
 	local class_name = string.match(file_path, "([^/]+)%.cls$")
+		or string.match(file_path, "([^/]+)%.cls%-meta%.xml$")
 	if not class_name or not string.find(file_path, "force%-app/main/default/classes/") then
 		error("Current buffer is not an Apex class in force-app/main/default/classes")
 	end
+	-- Resolve the target .cls buffer to write retrieved source into:
+	local cls_path = file_path:match("%.cls%-meta%.xml$")
+		and file_path:gsub("%.cls%-meta%.xml$", ".cls")
+		or file_path
 	self:set_class_name(class_name)
 	self:run_async(vim.schedule_wrap(function(resp)
 		resp = resp or {}
 		local body = resp.body
 		if not body then error("Apex class body missing") end
-		--
-		vim.api.nvim_buf_set_lines(0, 0, -1, true, vim.split(body, "\n"))
+		local cls_buf = vim.fn.bufadd(cls_path)
+		vim.fn.bufload(cls_buf)
+		vim.api.nvim_buf_set_lines(cls_buf, 0, -1, true, vim.split(body, "\n"))
 		-- SF CLI typically retrieves Apex classes without a final EOL:
-		vim.api.nvim_set_option_value("endofline", false, { buf = 0 })
-		vim.api.nvim_set_option_value("fixendofline", false, { buf = 0 })
-		-- save the buffer:
-		vim.api.nvim_cmd({ cmd = "write" }, {})
-		--
+		vim.api.nvim_set_option_value("endofline", false, { buf = cls_buf })
+		vim.api.nvim_set_option_value("fixendofline", false, { buf = cls_buf })
+		vim.api.nvim_buf_call(cls_buf, function()
+			vim.api.nvim_cmd({ cmd = "write" }, {})
+		end)
 		self._logger:tell_finished("Retrieved the Apex class.")
 	end))
 end
