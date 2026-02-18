@@ -24,8 +24,8 @@ local function get_git_worktree_root(worktree_dir)
 	if not git_lines or #git_lines == 0 then return nil end
 	-- Parse the .git file which contains: "gitdir: <path>"
 	local gitdir_line = git_lines[1]
-	if not vim.startswith(gitdir_line, "gitdir:") then return nil end
-	local gitdir_rel = gitdir_line:sub(#"gitdir:" + 1)
+	if not vim.startswith(gitdir_line, "gitdir: ") then return nil end
+	local gitdir_rel = gitdir_line:sub(#"gitdir: " + 1)
 	-- Convert to absolute path if necessary
 	local gitdir_abs
 	if gitdir_rel:sub(1, 1) == "/" then
