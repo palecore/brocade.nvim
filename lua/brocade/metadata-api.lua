@@ -330,7 +330,13 @@ function Deploy:run_async()
 		)
 		local status_req = CurlReq:new()
 		status_req:use_auth_info(auth_info)
-		status_req:set_suburl("/services/data/v" .. api_v .. "/metadata/deployRequest/" .. deploy_id)
+		status_req:set_suburl(
+			"/services/data/v"
+				.. api_v
+				.. "/metadata/deployRequest/"
+				.. deploy_id
+				.. "?includeDetails=true"
+		)
 		deploy_resp = status_req:send_async()
 		if not deploy_resp then
 			self._logger:tell_failed("Failed to get deployment status")
