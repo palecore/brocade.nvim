@@ -43,14 +43,26 @@ local function sf_config_path()
 	local cwd = vim.fn.getcwd()
 	-- First, try to find .sf directory in current project root
 	local sfdx_project_dir = vim.fs.root(cwd, { ".sf" })
-	if sfdx_project_dir then return vim.fs.joinpath(sfdx_project_dir, ".sf", "config.json") end
+	if sfdx_project_dir then
+		local config_path = vim.fs.joinpath(sfdx_project_dir, ".sf", "config.json")
+		local stat = vim.uv.fs_stat(config_path)
+		if stat and stat.type == "file" then
+			return config_path
+		end
+	end
 	-- If not found, check if we're in a git-worktree
 	if is_git_worktree(cwd) then
 		local parent_git_root = get_git_worktree_root(cwd)
 		if parent_git_root then
 			-- Try to find .sf directory in parent git project
 			local parent_sfdx_dir = vim.fs.root(parent_git_root, { ".sf" })
-			if parent_sfdx_dir then return vim.fs.joinpath(parent_sfdx_dir, ".sf", "config.json") end
+			if parent_sfdx_dir then
+				local parent_config_path = vim.fs.joinpath(parent_sfdx_dir, ".sf", "config.json")
+				local parent_stat = vim.uv.fs_stat(parent_config_path)
+				if parent_stat and parent_stat.type == "file" then
+					return parent_config_path
+				end
+			end
 		end
 	end
 
