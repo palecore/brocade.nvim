@@ -9,6 +9,7 @@ local M = {}
 
 local CurlReq = require("brocade.curl-request").CurlRequest
 local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
+local buf_diagnostics = require("brocade.diagnostics")
 
 -- IMPLEMENTATION
 
@@ -271,15 +272,9 @@ function M.RunAnonApex()
 			local compileProblem = assert(result.compileProblem)
 			local diagno_ns = assert(_self.diagno_ns)
 			vim.schedule(function()
-				-- set a diagnostic message for that compilation failure:
-				vim.diagnostic.set(diagno_ns, 0, {
+				buf_diagnostics._set(diagno_ns, 0, {
 					{ lnum = line, col = column, message = compileProblem },
 				})
-				-- after saving/re-reading the buffer, auto-clear this diagnostic:
-				vim.api.nvim_create_autocmd(
-					{ "BufRead", "BufWrite" },
-					{ buffer = 0, once = true, callback = function() vim.diagnostic.reset(diagno_ns, 0) end }
-				)
 			end)
 			return
 		end
@@ -296,15 +291,9 @@ function M.RunAnonApex()
 				return
 			end
 			vim.schedule(function()
-				-- set a diagnostic message for that runtime failure:
-				vim.diagnostic.set(diagno_ns, 0, {
+				buf_diagnostics._set(diagno_ns, 0, {
 					{ lnum = line, col = column, message = except_msg .. "\n" .. except_stacktrace },
 				})
-				-- after saving/re-reading the buffer, auto-clear this diagnostic:
-				vim.api.nvim_create_autocmd(
-					{ "BufRead", "BufWrite" },
-					{ buffer = 0, once = true, callback = function() vim.diagnostic.reset(diagno_ns, 0) end }
-				)
 			end)
 			return
 		end

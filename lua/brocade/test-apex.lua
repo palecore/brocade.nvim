@@ -4,6 +4,7 @@ local M = {}
 local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
 local CurlReq = require("brocade.curl-request").CurlRequest
 local Logger = require("brocade.logging").Logger
+local buf_diagnostics = require("brocade.diagnostics")
 
 -- IMPLEMENTATION
 
@@ -167,15 +168,7 @@ function RunTests:_show_test_failures(failures, ns, bufnr, class_name)
 		end
 	end
 
-	if #diagnostics > 0 then
-		vim.diagnostic.set(ns, bufnr, diagnostics)
-		-- Auto-clear diagnostics on next buffer read/write
-		vim.api.nvim_create_autocmd({ "BufRead", "BufWrite" }, {
-			buffer = bufnr,
-			once = true,
-			callback = function() vim.diagnostic.reset(ns, bufnr) end,
-		})
-	end
+	if #diagnostics > 0 then buf_diagnostics._set(ns, bufnr, diagnostics) end
 end
 
 return M

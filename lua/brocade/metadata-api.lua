@@ -9,6 +9,7 @@ local a = require("plenary.async")
 local CurlReq = require("brocade.curl-request").CurlRequest
 local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
 local Logger = require("brocade.logging").Logger
+local buf_diagnostics = require("brocade.diagnostics")
 
 -- helper to call Vimscript functions asynchronously:
 local a_fn = setmetatable({}, {
@@ -185,6 +186,7 @@ local Deploy = {
 	_component_name = nil,
 	_source_files = nil,
 	_check_only = false,
+	_bufnr = nil,
 }
 Deploy.__index = Deploy
 M.Deploy = Deploy
@@ -346,35 +348,42 @@ function Deploy:run_async()
 		return { success = true, status = deploy_result }
 	else
 		-- Handle deployment failure
-		local error_details = {}
+		local diagnostics = {}
 		if deploy_result.details and deploy_result.details.componentFailures then
 			local failures = deploy_result.details.componentFailures
 			if type(failures) ~= "table" then failures = { failures } end
 
 			for _, failure in ipairs(failures) do
-				local err_line = string.format(
-					"%s: %s (line %s, col %s)",
-					failure.fullName or "Unknown",
-					failure.problem or "Unknown error",
-					failure.lineNumber or "?",
-					failure.columnNumber or "?"
-				)
-				table.insert(error_details, err_line)
+				local lnum = tonumber(failure.lineNumber)
+				local col = tonumber(failure.columnNumber)
+				table.insert(diagnostics, {
+					lnum = lnum and (lnum - 1) or 0,
+					col = col and (col - 1) or 0,
+					message = failure.problem or "Unknown error",
+					source = "metadata-deploy",
+				})
 			end
 		end
 
-		local err_msg = "Deployment failed"
-		if #error_details > 0 then err_msg = err_msg .. ":\n" .. table.concat(error_details, "\n") end
+		if #diagnostics > 0 and self._bufnr then
+			vim.schedule(function()
+				local ns = vim.api.nvim_create_namespace("brocade-metadata-deploy")
+				vim.diagnostic.reset(ns, self._bufnr)
+				buf_diagnostics._set(ns, self._bufnr, diagnostics)
+			end)
+		end
 
+		local err_msg = ("Deployment failed with %d error(s)"):format(#diagnostics)
 		self._logger:tell_failed(err_msg)
-		return { success = false, status = deploy_result, errors = error_details }
+		return { success = false, status = deploy_result, errors = diagnostics }
 	end
 end
 
 ---Deploy the current buffer's metadata component
 ---@async
 function Deploy:run_on_this_buf_async()
-	local file_path = vim.api.nvim_buf_get_name(0)
+	local bufnr = vim.api.nvim_get_current_buf()
+	local file_path = vim.api.nvim_buf_get_name(bufnr)
 	if not file_path or file_path == "" then error("Buffer has no filename") end
 
 	local metadata_type, component_name, files = parse_metadata_component(file_path)
@@ -382,6 +391,7 @@ function Deploy:run_on_this_buf_async()
 		error("Current buffer is not a recognized Salesforce metadata component")
 	end
 
+	self._bufnr = bufnr
 	self:set_component(
 		metadata_type,
 		assert(component_name, "Component name is null!"),
