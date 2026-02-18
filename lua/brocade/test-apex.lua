@@ -103,6 +103,32 @@ function RunTests:run_on_this_buf_async()
 	end)
 end
 
+---Parse stack trace to find line and column for a specific class
+---@param stack_trace string The stack trace string
+---@param class_name string The class name to find
+---@return number|nil line_num Zero-based line number
+---@return number|nil col_num Zero-based column number
+function RunTests:_parse_stack_trace(stack_trace, class_name)
+	if not stack_trace or stack_trace == "" then
+		return nil, nil
+	end
+
+	-- Stack trace format: "Class.ClassName.methodName: line X, column Y"
+	-- Split by newlines and look for the matching class
+	for line in stack_trace:gmatch("[^\n]+") do
+		local matched_class, line_str, col_str = line:match("Class%.([^.:]+)[^:]*:%s*line%s*(%d+),%s*column%s*(%d+)")
+		if matched_class == class_name then
+			local line_num = tonumber(line_str)
+			local col_num = tonumber(col_str)
+			if line_num and col_num then
+				return line_num - 1, col_num - 1  -- Convert to zero-based
+			end
+		end
+	end
+
+	return nil, nil
+end
+
 function RunTests:_show_test_failures(failures, ns, bufnr, class_name)
 	if not failures or type(failures) ~= "table" or #failures == 0 then return end
 
@@ -111,8 +137,15 @@ function RunTests:_show_test_failures(failures, ns, bufnr, class_name)
 		-- Only show failures for the current class
 		local failure_class = failure.name or ""
 		if failure_class == class_name then
-			local line_num = (failure.lineNumber or 1) - 1
-			local col_num = (failure.columnNumber or 1) - 1
+			local line_num = failure.lineNumber and (failure.lineNumber - 1) or nil
+			local col_num = failure.columnNumber and (failure.columnNumber - 1) or nil
+
+			-- If line/column not provided, try parsing from stack trace
+			if not line_num or not col_num then
+				local parsed_line, parsed_col = self:_parse_stack_trace(failure.stackTrace, class_name)
+				line_num = line_num or parsed_line or 0
+				col_num = col_num or parsed_col or 0
+			end
 
 			-- Build error message
 			local msg_parts = {}
