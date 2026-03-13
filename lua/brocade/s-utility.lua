@@ -73,8 +73,8 @@ do
 		manage_tgt_org_cfg.run({ target_org })
 	end)
 
-	-- RUN THIS APEX
-	local run_apex_sub = cmdline:add_subcommand({ "run", "this", "apex" })
+	-- RUN (THIS APEX)
+	local run_apex_sub = cmdline:add_subcommand({ "run" })
 	local run_apex_inputs = { { target_org = nil } }
 	-- option: target-org
 	local target_org_opt = run_apex_sub:add_option("--target-org")
