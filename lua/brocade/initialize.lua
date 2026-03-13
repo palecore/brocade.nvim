@@ -6,6 +6,7 @@
 local a = require("plenary.async")
 
 local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
+local ReplayDebugging = require("brocade.replay-debugger")
 local Logger = require("brocade.logging").Logger
 
 local M = {}
@@ -60,7 +61,10 @@ end
 function ProjectInit:setup()
 	vim.api.nvim_create_autocmd({ "VimEnter", "DirChanged" }, {
 		group = self._augroup,
-		callback = function() self:_prefetch_auth_info() end,
+		callback = function()
+			self:_prefetch_auth_info()
+			ReplayDebugging.a_replay_debugger():setup()
+		end,
 	})
 end
 
