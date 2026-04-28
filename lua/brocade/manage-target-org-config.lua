@@ -4,35 +4,20 @@
 --
 local M = {}
 
+local OrgSession = require("brocade.org-session")
 
----Gets path to the project-local SF CLI configuration or nil if none exists.
----Traverses up the directory tree from the current working directory.
----@return string?
-local function sf_config_path()
-	local sf_dotdir_path = vim.fs.root(vim.fn.getcwd(), ".sf/config.json")
-	-- We don't want to use the global one:
-	if sf_dotdir_path == vim.fs.joinpath(vim.env.HOME, ".sf") then
-		return nil
-	end
-	if not sf_dotdir_path then
-		return nil
-	end
-	return vim.fs.joinpath(sf_dotdir_path, "config.json")
-end
+---Gets path to the project-local SF CLI config file using the canonical
+---resolution logic from org-session (including git-worktree support).
+---@return string
+local function sf_config_path() return OrgSession.sf_config_path() end
 
-local function read_project_config()
-	local sf_config_lines = vim.fn.readfile(assert(sf_config_path()))
-	local sf_config_json = table.concat(sf_config_lines, "\n")
-	local sf_config = vim.json.decode(sf_config_json, { luanil = { array = true, object = true } })
-	--
-	return {
-		sf_target_org = sf_config["target-org"],
-		sf_config = sf_config,
-	}
-end
+---@return { sf_target_org: string?, sf_config: table }?
+local function read_project_config() return OrgSession.read_project_config() end
 
 local function change_project_config(new_target_org)
-	local cfg = read_project_config().sf_config
+	local project_config = read_project_config()
+	assert(project_config, "No SF CLI project configuration found!")
+	local cfg = project_config.sf_config
 	cfg["target-org"] = new_target_org
 	local cfg_json = vim.json.encode(cfg, {})
 
@@ -71,7 +56,12 @@ function M.ManageTargetOrg()
 			end
 		else
 			-- print current configuration value:
-			print(read_project_config().sf_target_org)
+			local cfg = read_project_config()
+			if cfg and cfg.sf_target_org then
+				print(cfg.sf_target_org)
+			else
+				print("(no target org set)")
+			end
 		end
 	end
 
