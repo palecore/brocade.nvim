@@ -82,6 +82,21 @@ local function read_project_config()
 	}
 end
 
+---Returns the resolved path to the project-local SF CLI config file.
+---Asserts (via the inner resolver) if no SFDX project root is found.
+---Exported for use by other modules that need to read/write the same config.
+---@return string
+function M.sf_config_path() return sf_config_path() end
+
+---Reads and returns the project SF CLI configuration.
+---Exported so other modules share the same resolution logic as org-session.
+---@return { sf_target_org: string?, sf_config: table }?
+function M.read_project_config()
+	local ok, result = pcall(read_project_config)
+	if not ok then return nil end
+	return result
+end
+
 local function AuthInfo(access_token, instance_url, api_version, username, alias)
 	---@class brocade.org-session.AuthInfo
 	local self = {}
