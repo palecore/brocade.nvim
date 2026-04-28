@@ -127,7 +127,7 @@ function GetTraceFlags:_run__fetch_user_id(auth_info)
 		"q",
 		("SELECT Id FROM User WHERE Username = '%s' LIMIT 1"):format(username_sq_esc)
 	)
-	self._logger:tell_wip("Quering user info...")
+	self._logger:tell_wip("Querying user info...")
 	req:send(function(user_id_response) self:_run__fetch_debug_lvl(user_id_response) end)
 end
 function GetTraceFlags:_run__fetch_debug_lvl(user_id_response)

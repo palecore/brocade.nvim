@@ -83,13 +83,7 @@ do
 		run_apex_inputs[1] = run_apex_inputs[1] or {}
 		run_apex_inputs[1].target_org = target_org
 	end)
-	-- option: o
-	local o_opt = run_apex_sub:add_option("-o")
-	target_org_opt:on_value(function(target_org)
-		run_apex_inputs[1] = run_apex_inputs[1] or {}
-		run_apex_inputs[1].target_org = target_org
-	end)
-	o_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
+	
 	-- entrypoint
 	run_apex_sub:on_parsed(function()
 		--

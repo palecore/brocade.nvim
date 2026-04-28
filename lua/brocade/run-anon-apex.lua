@@ -103,7 +103,7 @@ function M.RunAnonApex()
 			"q",
 			("SELECT Id FROM User WHERE Username = '%s' LIMIT 1"):format(username_sq_esc)
 		)
-		tell_wip("Quering user info...")
+		tell_wip("Querying user info...")
 		req:send(_self.run_this_buf_parse_user_id)
 	end
 	function _self.run_this_buf_parse_user_id(result)
@@ -129,7 +129,7 @@ function M.RunAnonApex()
 				debug_lvl_dev_name_sq_esc
 			)
 		)
-		tell_wip("Quering debug level info...")
+		tell_wip("Querying debug level info...")
 		req:send(_self.run_this_buf_parse_debug_lvl_query)
 	end
 	function _self.run_this_buf_parse_debug_lvl_query(result)
