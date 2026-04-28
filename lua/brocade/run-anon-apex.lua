@@ -9,6 +9,7 @@ local M = {}
 
 local CurlReq = require("brocade.curl-request").CurlRequest
 local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
+local UserInfo = require("brocade.user-info")
 local buf_diagnostics = require("brocade.diagnostics")
 
 -- IMPLEMENTATION
@@ -90,31 +91,17 @@ function M.RunAnonApex()
 		_self.instance_url = assert(auth_info.get_instance_url())
 		_self.api_version = assert(auth_info.get_api_version())
 		_self.username = assert(auth_info.get_username())
+		_self.auth_info = auth_info
 		_self.run_this_buf_fetch_user_id()
 	end
 	function _self.run_this_buf_fetch_user_id()
-		local req = CurlReq:new()
-		req:set_access_token(_self.access_token)
-		req:set_api_version(_self.api_version)
-		req:set_instance_url(_self.instance_url)
-		req:set_tooling_suburl("/query")
-		local username_sq_esc = sq_escape(_self.username)
-		req:set_kv_data(
-			"q",
-			("SELECT Id FROM User WHERE Username = '%s' LIMIT 1"):format(username_sq_esc)
-		)
 		tell_wip("Querying user info...")
-		req:send(_self.run_this_buf_parse_user_id)
+		UserInfo.fetch_user_id(_self.auth_info, function(user_id)
+			_self.user_id = user_id
+			_self.run_this_buf_after_user_id()
+		end)
 	end
-	function _self.run_this_buf_parse_user_id(result)
-		assert(result, "User query result invalid!")
-		assert(result.done == true, "Query not finished!")
-		assert(result.size == 1, "Query result is not 1 record!")
-		assert(result.totalSize == 1, "Query result is not 1 record total!")
-		assert(result.entityTypeName == "User", "Unexpected query result entity!")
-		local records = result.records
-		local user_record = records[1]
-		_self.user_id = assert(user_record.Id)
+	function _self.run_this_buf_after_user_id()
 		-- fetch debug level ID:
 		local req = CurlReq:new()
 		req:set_access_token(_self.access_token)

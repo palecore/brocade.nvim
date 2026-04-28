@@ -5,6 +5,7 @@ local M = {}
 local FetchAuthInfo = require("brocade.org-session").FetchAuthInfo
 local CurlReq = require("brocade.curl-request").CurlRequest
 local Logger = require("brocade.logging").Logger
+local UserInfo = require("brocade.user-info")
 
 -- IMPLEMENTATION
 
@@ -118,27 +119,13 @@ end
 function GetTraceFlags:_run__fetch_user_id(auth_info)
 	---@cast auth_info brocade.org-session.AuthInfo
 	self._auth_info = assert(auth_info)
-	--
-	local req = CurlReq:new()
-	req:use_auth_info(auth_info)
-	req:set_tooling_suburl("/query")
-	local username_sq_esc = sq_escape(auth_info.get_username())
-	req:set_kv_data(
-		"q",
-		("SELECT Id FROM User WHERE Username = '%s' LIMIT 1"):format(username_sq_esc)
-	)
 	self._logger:tell_wip("Querying user info...")
-	req:send(function(user_id_response) self:_run__fetch_debug_lvl(user_id_response) end)
+	UserInfo.fetch_user_id(auth_info, function(user_id)
+		self._user_id = user_id
+		self:_run__fetch_debug_lvl()
+	end)
 end
-function GetTraceFlags:_run__fetch_debug_lvl(user_id_response)
-	assert(user_id_response, "User query result invalid!")
-	assert(user_id_response.done == true, "Query not finished!")
-	assert(user_id_response.size == 1, "Query result is not 1 record!")
-	assert(user_id_response.totalSize == 1, "Query result is not 1 record total!")
-	assert(user_id_response.entityTypeName == "User", "Unexpected query result entity!")
-	local records = user_id_response.records
-	local user_record = records[1]
-	self._user_id = assert(user_record.Id)
+function GetTraceFlags:_run__fetch_debug_lvl()
 	-- fetch debug level ID:
 	local req = CurlReq:new()
 	local auth_info = self._auth_info
