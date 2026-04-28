@@ -62,4 +62,34 @@ function Logger:tell_debug(msg)
 	vim.schedule(function() vim.notify(msg, vim.log.levels.DEBUG) end)
 end
 
+---Runs `fn` and, if it raises a Lua error, marks any in-progress operation
+---as failed with `fail_label` and emits the traceback as a debug message.
+---User-presentable errors should NOT be reported via `error()`; this helper
+---is a safety net for unintentional Lua errors that would otherwise leave
+---the fidget progress handle spinning forever.
+---@generic R
+---@param fail_label string Short user-facing label, e.g. "Apex deploy".
+---@param fn fun(): R
+---@return boolean ok
+---@return R|string result_or_error
+function Logger:run_protected(fail_label, fn)
+	local ok, result = xpcall(fn, debug.traceback)
+	if not ok then
+		self:tell_debug(
+			("[%s] Unexpected Lua error:\n%s"):format(fail_label, tostring(result))
+		)
+		self:tell_failed(fail_label .. " failed unexpectedly. Run `:messages` for details.")
+	end
+	return ok, result
+end
+
+---Returns a 0-arg function that wraps `fn` with `run_protected`. Suitable
+---for use as an `a.void(...)` body or a `vim.schedule(...)` callback.
+---@param fail_label string
+---@param fn fun()
+---@return fun()
+function Logger:protect(fail_label, fn)
+	return function() self:run_protected(fail_label, fn) end
+end
+
 return M

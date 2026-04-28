@@ -5,6 +5,7 @@
 local a = require("plenary.async")
 
 local Cmdline = require("brocade.cmdline")
+local Logger = require("brocade.logging").Logger
 local ManageTgtOrgCfg = require("brocade.manage-target-org-config")
 local RunAnonApex = require("brocade.run-anon-apex")
 local GetApexLogs = require("brocade.debug-logs").Get
@@ -12,6 +13,8 @@ local MetadataApi = require("brocade.metadata-api")
 local TestApex = require("brocade.test-apex")
 local ToolingRetrieve = require("brocade.tooling-retrieve")
 local TraceFlag = require("brocade.trace-flag")
+
+local logger = Logger:get_instance()
 
 local M = {}
 
@@ -90,9 +93,11 @@ do
 		local target_org = run_apex_inputs[1].target_org
 		run_apex_inputs[1] = {} -- clean before future invocations
 		--
-		local run_anon_apex = RunAnonApex.RunAnonApex()
-		if target_org then run_anon_apex.set_target_org(target_org) end
-		run_anon_apex.run_this_buf()
+		logger:run_protected("Run anonymous Apex", function()
+			local run_anon_apex = RunAnonApex.RunAnonApex()
+			if target_org then run_anon_apex.set_target_org(target_org) end
+			run_anon_apex.run_this_buf()
+		end)
 	end)
 
 	-- TRACE FLAG ENABLE
@@ -109,7 +114,7 @@ do
 		if trace_flag_enable_inputs[1].target_org then
 			enable:set_target_org(trace_flag_enable_inputs[1].target_org)
 		end
-		vim.schedule(function() enable:run_async() end)
+		vim.schedule(logger:protect("Trace flag enable", function() enable:run_async() end))
 	end)
 
 	-- TRACE FLAG GET
@@ -136,7 +141,7 @@ do
 		end
 		local dbg = trace_flag_get_inputs[1].debug_level or "SFDC_DevConsole"
 		get:set_debug_level_name(dbg)
-		vim.schedule(function() get:present_async() end)
+		vim.schedule(logger:protect("Trace flag get", function() get:present_async() end))
 	end)
 
 	-- GET DEBUG LOGS
@@ -158,7 +163,7 @@ do
 		local get = GetApexLogs:new()
 		if debug_logs_inputs[1].target_org then get:set_target_org(debug_logs_inputs[1].target_org) end
 		if debug_logs_inputs[1].limit then get:set_limit(debug_logs_inputs[1].limit) end
-		vim.schedule(function() get:present_async() end)
+		vim.schedule(logger:protect("Get debug logs", function() get:present_async() end))
 	end)
 
 	-- (APEX) TEST (THIS)
@@ -178,7 +183,7 @@ do
 			run_tests:set_target_org(apex_test_inputs[1].target_org)
 		end
 
-		a.void(function() run_tests:run_on_this_buf_async() end)()
+		a.void(logger:protect("Apex test", function() run_tests:run_on_this_buf_async() end))()
 	end)
 
 	-- RETRIEVE (this buffer)
@@ -195,7 +200,7 @@ do
 	retrieve_sub:on_parsed(function()
 		local retrieve = ToolingRetrieve.Retrieve:new()
 		if retrieve_inputs[1].target_org then retrieve:set_target_org(retrieve_inputs[1].target_org) end
-		a.void(function() retrieve:run_on_this_buf_async() end)()
+		a.void(logger:protect("Retrieve", function() retrieve:run_on_this_buf_async() end))()
 	end)
 
 	-- (METADATA) DEPLOY (this buffer)
@@ -222,7 +227,7 @@ do
 		end
 		if metadata_deploy_inputs[1].check_only then deploy:set_check_only(true) end
 		metadata_deploy_inputs[1] = { target_org = nil, check_only = false } -- reset
-		a.void(function() deploy:run_on_this_buf_async() end)()
+		a.void(logger:protect("Metadata deploy", function() deploy:run_on_this_buf_async() end))()
 	end)
 end
 
