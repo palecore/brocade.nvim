@@ -88,4 +88,28 @@ describe("Cmdline", function()
 		assert.are.same({ "--dry-run" }, opts)
 	end)
 
+	it("calls on_value once per occurrence when an option appears multiple times", function()
+		local c = Cmdline:new()
+		local sc = c:add_subcommand({ "test" })
+		local collected = {}
+		sc:add_option("--method"):on_value(function(v) table.insert(collected, v) end)
+		sc:add_option("--target-org"):on_value(function(_) end)
+		sc:on_parsed(function() end)
+		c:parse("test --method m1 --method m2 --target-org alias --method m3")
+		assert.are.same({ "m1", "m2", "m3" }, collected)
+	end)
+
+	it("parses options regardless of the order they were registered", function()
+		local c = Cmdline:new()
+		local sc = c:add_subcommand({ "test" })
+		local got_org, got_method
+		-- Register --target-org first, but pass it second on the cmdline.
+		sc:add_option("--target-org"):on_value(function(v) got_org = v end)
+		sc:add_option("--method"):on_value(function(v) got_method = v end)
+		sc:on_parsed(function() end)
+		c:parse("test --method m1 --target-org alias")
+		assert.are.equal("alias", got_org)
+		assert.are.equal("m1", got_method)
+	end)
+
 end)

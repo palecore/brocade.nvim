@@ -245,16 +245,23 @@ function Cmdline:parse(cmdline)
 	for _, subcmd in ipairs(self._subcommands) do
 		local is_matching, new_fargs = matches_subcommand(fargs, subcmd._tokens)
 		if is_matching and new_fargs then
-			-- handle options with values
-			if #new_fargs > 1 then
+			-- handle options with values; loop while the front token still names an
+			-- option, so that the same option may legitimately appear multiple
+			-- times (the consumer's on_value handler decides whether to override
+			-- or aggregate) and so that options appearing in any order are all
+			-- consumed before we attempt positional-arg parsing.
+			while #new_fargs >= 2 do
+				local matched = false
 				for _, option in ipairs(subcmd._options) do
 					if new_fargs[1] == option._key then
 						option._on_value_fn(new_fargs[2])
 						table.remove(new_fargs, 1)
 						table.remove(new_fargs, 1)
+						matched = true
+						break
 					end
-					if #new_fargs < 2 then break end
 				end
+				if not matched then break end
 			end
 			-- handle flags (no value, just presence)
 			if subcmd._flags then

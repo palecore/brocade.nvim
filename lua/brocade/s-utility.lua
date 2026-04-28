@@ -168,13 +168,27 @@ do
 
 	-- (APEX) TEST (THIS)
 	local apex_test_sub = cmdline:add_subcommand({ "test" })
-	local apex_test_inputs = { { target_org = nil } }
+	local apex_test_inputs = { { target_org = nil, methods = {} } }
+	local function reset_apex_test_inputs()
+		apex_test_inputs[1] = { target_org = nil, methods = {} }
+	end
 	-- option: target-org
 	local at_target_org_opt = apex_test_sub:add_option("--target-org")
 	at_target_org_opt:expect_value(function(lead, line, pos) return org_aliases(line) end)
 	at_target_org_opt:on_value(function(target_org)
-		apex_test_inputs[1] = apex_test_inputs[1] or {}
+		apex_test_inputs[1] = apex_test_inputs[1] or { methods = {} }
 		apex_test_inputs[1].target_org = target_org
+	end)
+	-- option: --method (repeatable; aggregates into a list)
+	local at_method_opt = apex_test_sub:add_option("--method")
+	at_method_opt:expect_value(function(lead, line, pos)
+		local lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
+		return TestApex.find_test_methods(lines)
+	end)
+	at_method_opt:on_value(function(method_name)
+		apex_test_inputs[1] = apex_test_inputs[1] or { methods = {} }
+		apex_test_inputs[1].methods = apex_test_inputs[1].methods or {}
+		table.insert(apex_test_inputs[1].methods, method_name)
 	end)
 	-- entrypoint
 	apex_test_sub:on_parsed(function()
@@ -182,7 +196,10 @@ do
 		if apex_test_inputs[1].target_org then
 			run_tests:set_target_org(apex_test_inputs[1].target_org)
 		end
-
+		if apex_test_inputs[1].methods and #apex_test_inputs[1].methods > 0 then
+			run_tests:set_test_methods(apex_test_inputs[1].methods)
+		end
+		reset_apex_test_inputs()
 		a.void(logger:protect("Apex test", function() run_tests:run_on_this_buf_async() end))()
 	end)
 

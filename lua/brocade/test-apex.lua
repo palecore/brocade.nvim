@@ -13,6 +13,8 @@ local RunTests = {
 	_target_org = nil,
 	_auth_info = nil,
 	_class_name = nil,
+	---@type string[]?
+	_test_methods = nil,
 }
 RunTests.__index = RunTests
 M.Run = RunTests
@@ -21,6 +23,17 @@ function RunTests:new() return setmetatable({}, self) end
 
 function RunTests:set_target_org(target_org) self._target_org = target_org end
 function RunTests:set_class_name(name) self._class_name = name end
+
+---Restricts the test run to a specific subset of test methods on the class.
+---When `nil` or empty, all test methods on the class are executed.
+---@param methods string[]?
+function RunTests:set_test_methods(methods)
+	if methods and #methods > 0 then
+		self._test_methods = methods
+	else
+		self._test_methods = nil
+	end
+end
 
 ---@async
 function RunTests:run_async()
@@ -32,11 +45,9 @@ function RunTests:run_async()
 	assert(self._class_name, "Class name must be set")
 
 	-- Build request payload for runTestsSynchronous
-	local test_payload = {
-		tests = {
-			{ className = self._class_name },
-		},
-	}
+	local class_entry = { className = self._class_name }
+	if self._test_methods then class_entry.testMethods = self._test_methods end
+	local test_payload = { tests = { class_entry } }
 
 	local req = CurlReq:new()
 	req:use_auth_info(self._auth_info)
@@ -168,7 +179,88 @@ function RunTests:_show_test_failures(failures, ns, bufnr, class_name)
 		end
 	end
 
-	if #diagnostics > 0 then buf_diagnostics._set(ns, bufnr, diagnostics) end
+if #diagnostics > 0 then buf_diagnostics._set(ns, bufnr, diagnostics) end
+end
+
+---Scans Apex source lines for declarations of test methods.
+---Recognises both:
+---  * Modern style: an `@isTest` annotation followed (after optional further
+---    annotations and modifiers) by a method declaration.
+---  * Legacy style: methods using the `testMethod` modifier inline.
+---Comments and `@isTest(...)` argument lists are tolerated.
+---@param lines string[]
+---@return string[] method_names In source order, deduplicated.
+function M.find_test_methods(lines)
+	local results = {}
+	local seen = {}
+	local function push(name)
+		if not name or name == "" then return end
+		if seen[name] then return end
+		seen[name] = true
+		table.insert(results, name)
+	end
+
+	---Strips line and block comments from a single line. Block comments
+	---spanning multiple lines are out of scope; this is a heuristic helper.
+	local function strip_comments(line)
+		line = line:gsub("//.*$", "")
+		line = line:gsub("/%*.-%*/", "")
+		return line
+	end
+
+	---Returns a method name if `line` looks like an Apex method declaration
+	---(return type + identifier + `(`).
+	local function method_name_in(line)
+		-- Strip leading modifiers and the `testMethod` keyword (case-insensitive)
+		-- before matching, so that legacy `static testMethod void foo()` works.
+		local ident = "[%w_]+"
+		-- Try patterns like "<returnType> <name>(":
+		local name = line:match(ident .. "%s+(" .. ident .. ")%s*%(")
+		return name
+	end
+
+	local pending_istest = false
+	for _, raw_line in ipairs(lines) do
+		local line = strip_comments(raw_line)
+		local trimmed = vim.trim(line)
+		if trimmed ~= "" then
+			local lower = trimmed:lower()
+			-- Detect @isTest / @IsTest annotations (with or without arguments).
+			if lower:match("^@istest") then
+				-- @isTest on a class line is fine; we'll just look at subsequent
+				-- method declarations to decide what is a test method.
+				pending_istest = true
+				-- @isTest may be on the same line as the method declaration:
+				local after_anno = trimmed:gsub("^@[Ii][Ss][Tt][Ee][Ss][Tt][^%s]*%s*", "")
+				-- The above gsub is intentionally tolerant; fall back to simply
+				-- continuing onto the next non-annotation line.
+				local name = method_name_in(after_anno)
+				if name then
+					push(name)
+					pending_istest = false
+				end
+			elseif lower:match("^@") then
+				-- Some other annotation on its own line; keep the pending flag.
+			elseif lower:match("%f[%w_]class%f[^%w_]") or lower:match("%f[%w_]interface%f[^%w_]") then
+				-- A class/interface declaration consumes any pending @isTest;
+				-- the annotation marks the *type* as a test type, not a method.
+				pending_istest = false
+			elseif lower:find("testmethod", 1, true) then
+				-- Legacy `testMethod` modifier; counts as a test method even
+				-- without an `@isTest` annotation directly above.
+				local name = method_name_in(line)
+				if name and name:lower() ~= "testmethod" then push(name) end
+				pending_istest = false
+			elseif pending_istest then
+				local name = method_name_in(line)
+				if name then
+					push(name)
+					pending_istest = false
+				end
+			end
+		end
+	end
+	return results
 end
 
 return M
