@@ -248,10 +248,35 @@ function M.RunAnonApex()
 		req:set_instance_url(_self.instance_url)
 		req:set_tooling_suburl("/executeAnonymous")
 		req:set_kv_data("anonymousBody", anon_body)
+		-- The anonymous-Apex endpoint encodes the script into the request URL,
+		-- so oversized scripts come back as HTTP 431 (Request Header Fields
+		-- Too Large) or 414 (URI Too Long). Opt in to status capture so we can
+		-- surface a meaningful message instead of a JSON parse error.
+		req:set_capture_http_status(true)
 		req:send(_self.run_this_buf_parse_anon_apex)
 	end
 	function _self.run_this_buf_parse_anon_apex(result)
 		assert(result, "Result invalid!")
+		if result._http_error then
+			local status = result._status
+			if status == 431 or status == 414 then
+				tell_failed(
+					"Anonymous Apex script is too large for the executeAnonymous endpoint "
+						.. "(HTTP "
+						.. tostring(status)
+						.. "). The script is encoded into the request URL, which has a "
+						.. "size limit; please reduce the script size or split it up."
+				)
+			else
+				tell_failed(
+					"Anonymous Apex request failed with HTTP "
+						.. tostring(status)
+						.. ". Response: "
+						.. tostring(result._raw_body)
+				)
+			end
+			return
+		end
 		if not result.compiled then
 			tell_failed("Apex didn't compile!")
 			local line = assert(result.line)

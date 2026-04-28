@@ -61,6 +61,31 @@ function CurlRequest:set_kv_data(k, v)
 	self.data_value = v
 end
 
+---When enabled, the request callback will receive an HTTP-error sentinel
+---table `{ _http_error = true, _status = <int>, _raw_body = <string> }`
+---instead of attempting to JSON-decode (and possibly throwing on) error
+---response bodies whose Content-Type is not JSON.
+---@param flag boolean
+function CurlRequest:set_capture_http_status(flag) self.capture_http_status = flag end
+
+local _HTTP_STATUS_SENTINEL = "\n___BROCADE_HTTP_STATUS___"
+
+---Splits a curl response body that was suffixed with the http-status sentinel
+---into the original body and the parsed numeric HTTP status.
+---Exposed for testing.
+---@param raw string
+---@return string body
+---@return integer? status
+function CurlRequest._split_status_sentinel(raw)
+	if type(raw) ~= "string" then return raw, nil end
+	local idx = raw:find(_HTTP_STATUS_SENTINEL, 1, true)
+	if not idx then return raw, nil end
+	local body = raw:sub(1, idx - 1)
+	local status_str = raw:sub(idx + #_HTTP_STATUS_SENTINEL)
+	local status = tonumber(vim.trim(status_str))
+	return body, status
+end
+
 ---@param auth_info brocade.org-session.AuthInfo
 function CurlRequest:use_auth_info(auth_info)
 	self:set_access_token(auth_info.get_access_token())
@@ -135,9 +160,25 @@ function CurlRequest:send(cb)
 		call_stdin = json_data
 	end
 	table.insert(call_cmd, call_url)
+	if self.capture_http_status then
+		table.insert(call_cmd, "-w")
+		table.insert(call_cmd, _HTTP_STATUS_SENTINEL .. "%{http_code}")
+	end
 	vim.system(call_cmd, { stdin = call_stdin }, function(obj)
+		local raw_stdout = obj.stdout
+		local http_status = nil
+		if self.capture_http_status then
+			raw_stdout, http_status = CurlRequest._split_status_sentinel(raw_stdout)
+		end
+		-- For non-2xx responses, short-circuit with an HTTP-error sentinel
+		-- so the caller can react (e.g. distinguish 431 from a parse failure)
+		-- without getting a JSON-decode `error()` thrown at it.
+		if self.capture_http_status and http_status and (http_status < 200 or http_status >= 300) then
+			cb({ _http_error = true, _status = http_status, _raw_body = raw_stdout or "" })
+			return
+		end
 		if not self.is_expecting_json then
-			local result = obj.stdout
+			local result = raw_stdout
 			vim.notify(
 				vim.inspect({ "call_cmd", call_cmd, "stdin", call_stdin, "result", result }),
 				vim.log.levels.DEBUG
@@ -146,7 +187,7 @@ function CurlRequest:send(cb)
 			return
 		end
 
-		local result_json = obj.stdout
+		local result_json = raw_stdout
 		if not result_json then
 			error("Response is incomplete!")
 			return
