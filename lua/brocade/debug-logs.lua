@@ -25,6 +25,11 @@ local GetApexLogs = {
 GetApexLogs.__index = GetApexLogs
 M.Get = GetApexLogs
 
+-- Bodies are scoped to an org instance so identical record IDs from different
+-- orgs cannot share a cached response. An entry is either retrieved (`body`),
+-- currently being retrieved (`retrieving`), or absent.
+local _apex_debug_log_cache = {}
+
 local LogsResult = {
 	_payload = nil,
 	_size = nil,
@@ -134,6 +139,82 @@ function GetApexLogs:run_async(cb)
 	return LogsResult:parse_rest_resp(resp)
 end
 
+---@param log_id string
+---@return table
+function GetApexLogs:_log_cache_entry(log_id)
+	local instance_url = assert(self._auth_info).get_instance_url()
+	local org_cache = _apex_debug_log_cache[instance_url]
+	if not org_cache then
+		org_cache = {}
+		_apex_debug_log_cache[instance_url] = org_cache
+	end
+	local entry = org_cache[log_id]
+	if not entry then
+		entry = {}
+		org_cache[log_id] = entry
+	end
+	return entry
+end
+
+---@async
+---@param url string
+---@param log_id string
+---@param entry table
+function GetApexLogs:_retrieve_log_body_async(url, log_id, entry)
+	local req = CurlReq:new()
+	req:use_auth_info(assert(self._auth_info))
+	req:set_suburl(url .. "/Body")
+	req:set_expect_json(false)
+	entry.body = req:send_async()
+	entry.retrieving = nil
+end
+
+---@param url string
+---@param log_id string
+---@return table
+function GetApexLogs:_start_log_retrieval(url, log_id)
+	local entry = self:_log_cache_entry(log_id)
+	if entry.body ~= nil or entry.retrieving then return entry end
+
+	entry.retrieving = true
+	a.void(function() self:_retrieve_log_body_async(url, log_id, entry) end)()
+	return entry
+end
+
+---@async
+---@param url string
+---@param log_id string
+---@return string
+function GetApexLogs:_get_log_body_async(url, log_id)
+	local entry = self:_start_log_retrieval(url, log_id)
+	while entry.retrieving do
+		a.util.sleep(20)
+	end
+	return entry.body or ""
+end
+
+---@param lines string[]
+---@return { buf: integer }
+function GetApexLogs:_preview_buffer(lines)
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].bufhidden = "wipe"
+	vim.bo[buf].filetype = "sflog"
+	return { buf = buf }
+end
+
+---@param item table
+---@return { buf: integer }
+function GetApexLogs:_preview_log(item)
+	local entry = self:_start_log_retrieval(item.url, item.log_id)
+	if entry.body == nil then return self:_preview_buffer({ "Retrieving..." }) end
+	local lines = vim.split(entry.body, "\n", { plain = true })
+	while #lines > 50 do
+		table.remove(lines)
+	end
+	return self:_preview_buffer(lines)
+end
+
 ---@async Optionally - will step into plenary async context if called outside it.
 function GetApexLogs:present_async()
 	-- handle legacy fire-and-forget invocation in sync context:
@@ -142,45 +223,51 @@ function GetApexLogs:present_async()
 	end
 	-- the rest runs in plenary async context:
 	local result = assert(self:run_async())
-	local lines = {}
+	local items = {}
 	for idx = 1, result:count() do
 		local id = result:id_at(idx)
 		local start_ts = result:start_dt_at_async(idx)
 		local start_str = start_ts and os.date("%d.%m.%Y %H:%M", start_ts) or "?"
-		local op = result:operation_at(idx) or "?"
-		local status = result:status_at(idx) or "?"
-		local user = result:user_at(idx) or "?"
-		lines[idx] = ("%s\t%s\t%s\t%s\t%s"):format(id, status, start_str, op, user)
+		items[idx] = {
+			log_id = id,
+			url = result:url_at(idx),
+			line = ("%s\t%s\t%s\t%s\t%s"):format(
+				id,
+				result:status_at(idx) or "?",
+				start_str,
+				result:operation_at(idx) or "?",
+				result:user_at(idx) or "?"
+			),
+		}
 	end
 
 	local selection = a.wrap(function(_cb)
-		vim.ui.select(
-			lines,
-			{ prompt = "Select Apex log:" },
-			function(item, idx) _cb({ item = item, idx = idx }) end
-		)
+		vim.ui.select(items, {
+			prompt = "Select Apex log:",
+			format_item = function(item) return item.line end,
+			preview_item = function(item)
+				if not item.url then return self:_preview_buffer({ "No log URL available." }) end
+				return self:_preview_log(item)
+			end,
+		}, _cb)
 	end, 1)()
-	if not selection or not selection.idx then return end
+	if not selection then return end
 
-	local idx = selection.idx
-	local url = result:url_at(idx)
-	local log_id = result:id_at(idx)
+	local url = selection.url
+	local log_id = selection.log_id
 	if not url then
 		self._logger:tell_failed("The selected log has no URL!")
 		return
 	end
 
-	local req = CurlReq:new()
-	req:use_auth_info(self._auth_info)
-	req:set_suburl(url .. "/Body")
-	req:set_expect_json(false)
-	self._logger:tell_wip("Fetching log body...")
-	local body = req:send_async()
+	local entry = self:_log_cache_entry(log_id)
+	if entry.body == nil then self._logger:tell_wip("Fetching log body...") end
+	local body = self:_get_log_body_async(url, log_id)
 
 	local project_root_dir = vim.fs.root(".", { "sfdx-project.json", ".sf", ".sfdx" })
 	local log_dir = vim.fs.joinpath(project_root_dir, ".sfdx", "tools", "debug", "logs")
 	local log_path = vim.fs.joinpath(log_dir, (log_id or "") .. ".log")
-	local body_lines = vim.split(body or "", "\n")
+	local body_lines = vim.split(body, "\n", { plain = true })
 	assert(a_fn.mkdir(log_dir, "p") ~= 0, "Creating log dir failed!")
 	assert(a_fn.writefile(body_lines, log_path, "s") == 0, "Writing log file failed!")
 	a.api.nvim_cmd({ cmd = "split", args = { log_path } }, {})
