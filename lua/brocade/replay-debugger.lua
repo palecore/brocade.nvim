@@ -4,6 +4,10 @@
 
 local M = {}
 
+local _recent_replayed_log_path = nil
+local _current_replay_config_name = "Apex Replay: current log file"
+local _recent_replay_config_prefix = "Apex Replay: recently replayed log file"
+
 -- Locate the Apex Replay Debugger adapter within the VS Code extension
 local function get_apex_replay_adapter()
 	local uv = vim.loop
@@ -198,6 +202,54 @@ ReplayDebugger.__index = ReplayDebugger
 ---@return brocade.replay-debugger.ReplayDebugger
 function M.a_replay_debugger() return setmetatable({}, ReplayDebugger) end
 
+---@param path string
+---@return string
+local function recent_replay_config_name(path)
+	return ("%s (%s)"):format(_recent_replay_config_prefix, vim.fn.fnamemodify(path, ":t"))
+end
+
+---@param dap table
+---@param dap_apex_cfgs table[]
+local function update_recent_replay_config(dap, dap_apex_cfgs)
+	for idx = #dap_apex_cfgs, 1, -1 do
+		local config = dap_apex_cfgs[idx]
+		if config._brocade_recent_replay then table.remove(dap_apex_cfgs, idx) end
+	end
+	if not _recent_replayed_log_path then return end
+
+	local log_path = _recent_replayed_log_path
+	dap_apex_cfgs[#dap_apex_cfgs + 1] = {
+		_brocade_recent_replay = true,
+		name = recent_replay_config_name(log_path),
+		type = "apex-replay",
+		request = "launch",
+		logFileContents = function() return read_file_text(log_path) end,
+		logFileName = vim.fn.fnamemodify(log_path, ":t"),
+		logFilePath = log_path,
+		projectPath = vim.fn.getcwd(),
+		lineBreakpointInfo = function() return build_line_breakpoint_info(vim.fn.getcwd()) end,
+		stopOnEntry = true,
+		trace = true,
+		cwd = vim.fn.getcwd(),
+		workspaceRoot = vim.fn.getcwd(),
+	}
+end
+
+---@param dap table
+---@param dap_apex_cfgs table[]
+local function setup_replay_config_listener(dap, dap_apex_cfgs)
+	dap.listeners.on_config["brocade-apex-replay-recent-log"] = function(config)
+		if config.type ~= "apex-replay" or not config.logFilePath then return config end
+		local log_path = config.logFilePath
+		if type(log_path) == "function" then log_path = log_path() end
+		if log_path and log_path ~= "" then
+			_recent_replayed_log_path = log_path
+			update_recent_replay_config(dap, dap_apex_cfgs)
+		end
+		return config
+	end
+end
+
 function ReplayDebugger:setup()
 	local has_dap, dap = pcall(require, "dap")
 	if not has_dap or not dap then
@@ -207,28 +259,39 @@ function ReplayDebugger:setup()
 
 	local dap_apex_cfgs = dap.configurations.apex or {}
 	dap.configurations.apex = dap_apex_cfgs
-	dap_apex_cfgs[#dap_apex_cfgs + 1] = {
-		name = "Apex Replay: current log file",
-		type = "apex-replay",
-		request = "launch",
+	local current_config
+	for _, config in ipairs(dap_apex_cfgs) do
+		if config._brocade_current_replay then
+			current_config = config
+			break
+		end
+	end
+	if not current_config then
+		current_config = {
+			_brocade_current_replay = true,
+			name = _current_replay_config_name,
+			type = "apex-replay",
+			request = "launch",
 
-		-- Use the current buffer as the log source
-		logFileContents = function()
-			local p = vim.fn.expand("%:p")
-			local args = make_replay_args(p)
-			return args.logFileContents
-		end,
-		logFileName = function() return vim.fn.expand("%:t") end,
-		logFilePath = function() return vim.fn.expand("%:p") end,
-		projectPath = function() return vim.fn.getcwd() end,
-		lineBreakpointInfo = function() return build_line_breakpoint_info(vim.fn.getcwd()) end,
-
-		stopOnEntry = true,
-		trace = true,
-
-		cwd = vim.fn.getcwd(),
-		workspaceRoot = vim.fn.getcwd(),
-	}
+			-- Use the current buffer as the log source
+			logFileContents = function()
+				local p = vim.fn.expand("%:p")
+				local args = make_replay_args(p)
+				return args.logFileContents
+			end,
+			logFileName = function() return vim.fn.expand("%:t") end,
+			logFilePath = function() return vim.fn.expand("%:p") end,
+			projectPath = function() return vim.fn.getcwd() end,
+			lineBreakpointInfo = function() return build_line_breakpoint_info(vim.fn.getcwd()) end,
+			stopOnEntry = true,
+			trace = true,
+			cwd = vim.fn.getcwd(),
+			workspaceRoot = vim.fn.getcwd(),
+		}
+		dap_apex_cfgs[#dap_apex_cfgs + 1] = current_config
+	end
+	update_recent_replay_config(dap, dap_apex_cfgs)
+	setup_replay_config_listener(dap, dap_apex_cfgs)
 
 	-- Also allow starting from *.log buffers (filetype 'log')
 	dap.configurations.sflog = dap.configurations.apex
