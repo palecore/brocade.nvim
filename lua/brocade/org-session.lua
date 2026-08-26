@@ -117,6 +117,19 @@ local function AuthInfo(access_token, instance_url, api_version, username, alias
 	return self
 end
 
+local function fetch_access_token(target_org, callback)
+	local sf_cmd = { "sf", "org", "auth", "show-access-token", "--json" }
+	if target_org then table.insert(sf_cmd, "--target-org=" .. target_org) end
+	vim.system(sf_cmd, {}, function(obj)
+		assert(obj.stdout, "No standard output!")
+		assert(type(obj.stdout) == "string", "Standard output is not a string!")
+		local response = vim.json.decode(obj.stdout, { luanil = { object = true, array = true } })
+		assert(response["status"] == 0, "Response has a non-zero status!")
+		assert(response["result"], "Response doesn't have a result")
+		callback(assert(response["result"]["accessToken"]))
+	end)
+end
+
 local function fetch_auth_info(target_org, callback)
 	-- if target org is not given, use project-default one:
 	if not target_org then target_org = read_project_config().sf_target_org end
@@ -127,28 +140,30 @@ local function fetch_auth_info(target_org, callback)
 		callback(auth_infos[target_org])
 		return
 	end
-	-- otherwise, fetch it from SF CLI:
+	-- Fetch non-sensitive fields first. Access token is deliberately obtained
+	-- through the dedicated command because org display redacts it.
 	local sf_cmd = { "sf", "org", "display", "--json" }
 	if target_org then table.insert(sf_cmd, "--target-org=" .. target_org) end
 	vim.system(sf_cmd, {}, function(obj)
 		assert(obj.stdout, "No standard output!")
 		assert(type(obj.stdout) == "string", "Standard output is not a string!")
-		--
 		local response = vim.json.decode(obj.stdout, { luanil = { object = true, array = true } })
 		assert(response["status"] == 0, "Response has a non-zero status!")
 		assert(response["result"], "Response doesn't have a result")
-		--
-		local auth_info = AuthInfo(
-			assert(response["result"]["accessToken"]),
-			assert(response["result"]["instanceUrl"]),
-			assert(response["result"]["apiVersion"]),
-			assert(response["result"]["username"]),
-			assert(response["result"]["alias"])
-		)
-		auth_infos[auth_info.get_username()] = auth_info
-		auth_infos[auth_info.get_alias()] = auth_info
-		vim.g.brocade_auth_infos = auth_infos
-		callback(auth_info)
+		local result = response["result"]
+		fetch_access_token(target_org, function(access_token)
+			local auth_info = AuthInfo(
+				access_token,
+				assert(result["instanceUrl"]),
+				assert(result["apiVersion"]),
+				assert(result["username"]),
+				assert(result["alias"])
+			)
+			auth_infos[auth_info.get_username()] = auth_info
+			auth_infos[auth_info.get_alias()] = auth_info
+			vim.g.brocade_auth_infos = auth_infos
+			callback(auth_info)
+		end)
 	end)
 end
 
