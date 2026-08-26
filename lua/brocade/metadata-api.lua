@@ -314,7 +314,13 @@ function Deploy:run_async()
 
 	if not resp or not resp.id then
 		local err_msg = "Deployment submission failed"
-		if resp and resp.message then err_msg = err_msg .. ": " .. resp.message end
+		if resp and resp.message then
+			err_msg = err_msg .. ": " .. resp.message
+		elseif resp and resp[1] then
+			local error_code = resp[1].errorCode or "(Unknown error code)"
+			local message = resp[1].message or "(Unknown error message)"
+			err_msg = err_msg .. ": " .. error_code .. " - " .. message
+		end
 		self._logger:tell_failed(err_msg)
 		error(err_msg)
 	end
